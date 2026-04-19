@@ -1,0 +1,64 @@
+{
+  "name": "ankipack",
+  "version": "0.1.0",
+  "description": "Generate Anki .apkg decks with full FSRS support. Works in browsers, Node.js, and Bun.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "check": "tsc --noEmit",
+    "lint": "bunx eslint src/",
+    "format": "bunx prettier --write src/",
+    "format:check": "bunx prettier --check src/",
+    "generate": "bunx buf generate",
+    "prepublishOnly": "bun run build && bun test"
+  },
+  "keywords": [
+    "anki",
+    "apkg",
+    "flashcards",
+    "spaced-repetition",
+    "fsrs",
+    "deck-generator",
+    "anki-deck",
+    "srs"
+  ],
+  "author": "Oliver Seifert",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ImGajeed76/ankipack.git"
+  },
+  "homepage": "https://github.com/ImGajeed76/ankipack",
+  "bugs": {
+    "url": "https://github.com/ImGajeed76/ankipack/issues"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
+    "sql.js": "^1.12.0",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.50.0",
+    "@bufbuild/protoc-gen-es": "^2.6.0",
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "^1.3.12",
+    "@types/sql.js": "^1.4.9",
+    "eslint": "^10.2.0",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.58.2"
+  }
+}

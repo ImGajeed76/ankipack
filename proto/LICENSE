@@ -1,0 +1,9 @@
+The .proto files in this directory originate from the Anki source code
+(https://github.com/ankitects/anki) and are licensed under the GNU Affero
+General Public License, version 3 or later.
+
+They are used at build time only to generate TypeScript interop code for
+reading and writing the .apkg file format. The generated code and the
+ankipack package itself are distributed under the MIT license.
+
+See https://www.gnu.org/licenses/agpl.html for the full AGPL text.
