@@ -7,10 +7,10 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Empty } from "./generic_pb";
-import { file_anki_generic } from "./generic_pb";
-import type { MediaSyncProgress } from "./sync_pb";
-import { file_anki_sync } from "./sync_pb";
+import type { Empty } from "./generic_pb.js";
+import { file_anki_generic } from "./generic_pb.js";
+import type { MediaSyncProgress } from "./sync_pb.js";
+import { file_anki_sync } from "./sync_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**

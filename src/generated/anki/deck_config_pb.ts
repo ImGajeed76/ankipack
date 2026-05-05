@@ -7,9 +7,9 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import { file_anki_generic } from "./generic_pb";
-import { file_anki_collection } from "./collection_pb";
-import { file_anki_decks } from "./decks_pb";
+import { file_anki_generic } from "./generic_pb.js";
+import { file_anki_collection } from "./collection_pb.js";
+import { file_anki_decks } from "./decks_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**

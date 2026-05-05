@@ -1,4 +1,4 @@
-import type { Model } from "./model";
+import type { Model } from "./model.js";
 
 export interface NoteOptions {
   /** The model (note type) that defines this note's fields and card templates. */

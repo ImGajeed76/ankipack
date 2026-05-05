@@ -1,8 +1,8 @@
-export { Package } from "./package";
-export { Deck } from "./deck";
-export type { DeckOptions } from "./deck";
-export { DeckConfig } from "./deck-config";
-export type { DeckConfigOptions } from "./deck-config";
+export { Package } from "./package.js";
+export { Deck } from "./deck.js";
+export type { DeckOptions } from "./deck.js";
+export { DeckConfig } from "./deck-config.js";
+export type { DeckConfigOptions } from "./deck-config.js";
 export type {
   NewCardInsertOrder,
   NewCardGatherPriority,
@@ -10,8 +10,8 @@ export type {
   ReviewCardOrder,
   ReviewMix,
   LeechAction,
-} from "./deck-config";
-export { Model } from "./model";
-export type { ModelOptions, FieldDef, TemplateDef } from "./model";
-export { Note } from "./note";
-export type { NoteOptions } from "./note";
+} from "./deck-config.js";
+export { Model } from "./model.js";
+export type { ModelOptions, FieldDef, TemplateDef } from "./model.js";
+export { Note } from "./note.js";
+export type { NoteOptions } from "./note.js";

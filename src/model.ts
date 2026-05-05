@@ -9,9 +9,9 @@ import {
   type Notetype_Field_Config,
   Notetype_Template_ConfigSchema,
   type Notetype_Template_Config,
-} from "./generated/anki/notetypes_pb";
-import { IdGenerator } from "./util/id";
-import { DEFAULT_CSS, DEFAULT_LATEX_PRE, DEFAULT_LATEX_POST } from "./util/constants";
+} from "./generated/anki/notetypes_pb.js";
+import { IdGenerator } from "./util/id.js";
+import { DEFAULT_CSS, DEFAULT_LATEX_PRE, DEFAULT_LATEX_POST } from "./util/constants.js";
 
 const idGen = new IdGenerator();
 

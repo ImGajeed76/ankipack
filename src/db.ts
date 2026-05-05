@@ -1,24 +1,24 @@
 import type { SqlJsStatic, Database } from "sql.js";
-import type { Deck } from "./deck";
-import type { Model } from "./model";
-import type { Note } from "./note";
-import type { DeckConfig } from "./deck-config";
+import type { Deck } from "./deck.js";
+import type { Model } from "./model.js";
+import type { Note } from "./note.js";
+import type { DeckConfig } from "./deck-config.js";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { DeckConfig_ConfigSchema } from "./generated/anki/deck_config_pb";
+import { DeckConfig_ConfigSchema } from "./generated/anki/deck_config_pb.js";
 import {
   Deck_CommonSchema,
   Deck_KindContainerSchema,
   Deck_NormalSchema,
-} from "./generated/anki/decks_pb";
+} from "./generated/anki/decks_pb.js";
 import {
   Notetype_ConfigSchema,
   Notetype_Field_ConfigSchema,
   Notetype_Template_ConfigSchema,
-} from "./generated/anki/notetypes_pb";
-import { IdGenerator } from "./util/id";
-import { generateGuid } from "./util/guid";
-import { fieldChecksum } from "./util/checksum";
-import { FIELD_SEPARATOR } from "./util/constants";
+} from "./generated/anki/notetypes_pb.js";
+import { IdGenerator } from "./util/id.js";
+import { generateGuid } from "./util/guid.js";
+import { fieldChecksum } from "./util/checksum.js";
+import { FIELD_SEPARATOR } from "./util/constants.js";
 
 /** All SQL to create the V18 schema */
 const SCHEMA_SQL = `

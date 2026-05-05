@@ -1,6 +1,6 @@
-import { DeckConfig } from "./deck-config";
-import type { Note } from "./note";
-import { IdGenerator } from "./util/id";
+import { DeckConfig } from "./deck-config.js";
+import type { Note } from "./note.js";
+import { IdGenerator } from "./util/id.js";
 
 const idGen = new IdGenerator();
 

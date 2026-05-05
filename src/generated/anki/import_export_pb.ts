@@ -7,14 +7,14 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { CardIds } from "./cards_pb";
-import { file_anki_cards } from "./cards_pb";
-import type { OpChanges } from "./collection_pb";
-import { file_anki_collection } from "./collection_pb";
-import type { NoteId, NoteIds } from "./notes_pb";
-import { file_anki_notes } from "./notes_pb";
-import type { Empty, StringList } from "./generic_pb";
-import { file_anki_generic } from "./generic_pb";
+import type { CardIds } from "./cards_pb.js";
+import { file_anki_cards } from "./cards_pb.js";
+import type { OpChanges } from "./collection_pb.js";
+import { file_anki_collection } from "./collection_pb.js";
+import type { NoteId, NoteIds } from "./notes_pb.js";
+import { file_anki_notes } from "./notes_pb.js";
+import type { Empty, StringList } from "./generic_pb.js";
+import { file_anki_generic } from "./generic_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**

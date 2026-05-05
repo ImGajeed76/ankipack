@@ -8,8 +8,8 @@ import {
   DeckConfig_Config_ReviewCardOrder,
   DeckConfig_Config_ReviewMix,
   DeckConfig_Config_LeechAction,
-} from "./generated/anki/deck_config_pb";
-import { IdGenerator } from "./util/id";
+} from "./generated/anki/deck_config_pb.js";
+import { IdGenerator } from "./util/id.js";
 
 const idGen = new IdGenerator();
 

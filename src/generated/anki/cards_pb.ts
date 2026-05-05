@@ -7,7 +7,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import { file_anki_collection } from "./collection_pb";
+import { file_anki_collection } from "./collection_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**

@@ -1,7 +1,7 @@
 import type { SqlJsStatic } from "sql.js";
 import { zipSync, strToU8 } from "fflate";
-import type { Deck } from "./deck";
-import { buildDatabase } from "./db";
+import type { Deck } from "./deck.js";
+import { buildDatabase } from "./db.js";
 
 /**
  * A collection of decks and media files that can be exported as an `.apkg` file.

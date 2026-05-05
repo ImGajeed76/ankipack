@@ -1,4 +1,4 @@
-import { BASE91_ALPHABET } from "./constants";
+import { BASE91_ALPHABET } from "./constants.js";
 
 /**
  * Generate a globally unique ID for a note using base91 encoding.
