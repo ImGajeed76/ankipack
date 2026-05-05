@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- Fix: `templateHasContent` now honors mustache section gating
+  (`{{#Field}}…{{/Field}}`), matching Anki's own algorithm. Templates
+  whose body is wrapped in a section with an empty gate no longer
+  generate phantom "(empty card)" entries.
+- Fix: emit explicit `.js` extensions on relative imports so the
+  compiled ESM works under Node's strict resolver without a manual
+  patch.
+
 ## 0.1.0
 
 Initial release.
