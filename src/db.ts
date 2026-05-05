@@ -377,43 +377,148 @@ function extractClozeOrds(fields: string[]): number[] {
   return ords.size > 0 ? [...ords].sort((a, b) => a - b) : [0];
 }
 
+// ── Empty-card detection (mirrors Anki's algorithm) ────────────────────────
+//
+// Source of truth: ankitects/anki, rslib/src/template.rs (`template_is_empty`)
+// and rslib/src/notetype/cardgen.rs (`is_nonempty`, `new_cards_required_normal`).
+//
+// Anki decides "should this card exist?" by parsing the question template into
+// an AST of text / replacement / section / negated-section nodes, then walking
+// the AST against the SET of field NAMES that resolve to non-empty values.
+// Plain text alone never makes a template non-empty: only a Replacement node
+// whose key is in that set counts. Section bodies are recursed into only when
+// the section's gate matches (truthy for `#`, falsy for `^`).
+//
+// `{{type:Field}}` and `{{cloze:Field}}` parse as Replacement nodes whose key
+// is "Field" (the filter prefix is dropped when computing the key). They are
+// content iff that field is non-empty, same rule as `{{Field}}`.
+//
+// `{{FrontSide}}` parses as Replacement{ key: "FrontSide" }; "FrontSide" is
+// not a real field name, so it is treated as empty for this check.
+
+/**
+ * Anki's `field_is_empty`: a field counts as empty when its trimmed value is
+ * only whitespace, `<br>`, `</br>`, `<div>`, `</div>`, or `<div />`. Anything
+ * else (including `[sound:...]`, `<img ...>`, raw HTML with text inside) is
+ * considered non-empty. See `rslib/src/template.rs` `field_is_empty`.
+ */
+function fieldIsEmpty(text: string): boolean {
+  return /^(?:\s|<\/?(?:br|div)\s?\/?>)*$/i.test(text);
+}
+
+type ParsedNode =
+  | { kind: "text" }
+  | { kind: "replacement"; key: string }
+  | { kind: "section"; key: string; children: ParsedNode[] }
+  | { kind: "negated"; key: string; children: ParsedNode[] };
+
+/** Strip filter prefixes (e.g. `type:Definition` → `Definition`). */
+function replacementKey(raw: string): string {
+  const colon = raw.lastIndexOf(":");
+  return (colon >= 0 ? raw.slice(colon + 1) : raw).trim();
+}
+
+/**
+ * Parse a mustache template into the minimal AST needed for the empty-card
+ * check. Bodies of text nodes are discarded since the caller only cares about
+ * structure. Comments (`{{!...}}`) are dropped. Unbalanced or otherwise
+ * malformed sections fall through as text, matching Anki's permissive
+ * behaviour for templates that contain stray `{{` / `}}`.
+ */
+function parseTemplate(src: string): ParsedNode[] {
+  const tokenRegex = /\{\{\s*([#^/!]?)\s*([^}]*?)\s*\}\}/g;
+  const root: ParsedNode[] = [];
+  const stack: { key: string; kind: "section" | "negated"; children: ParsedNode[] }[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  const currentList = (): ParsedNode[] => (stack.length > 0 ? stack[stack.length - 1].children : root);
+
+  while ((match = tokenRegex.exec(src)) !== null) {
+    if (match.index > lastIndex) {
+      currentList().push({ kind: "text" });
+    }
+    const sigil = match[1];
+    const body = match[2];
+
+    if (sigil === "!") {
+      // comment, drop
+    } else if (sigil === "#" || sigil === "^") {
+      stack.push({ key: body.trim(), kind: sigil === "#" ? "section" : "negated", children: [] });
+    } else if (sigil === "/") {
+      const closing = body.trim();
+      const top = stack[stack.length - 1];
+      if (top && top.key === closing) {
+        stack.pop();
+        currentList().push({ kind: top.kind, key: top.key, children: top.children });
+      }
+      // Mismatched close: ignore. Anki's parser would raise; we degrade.
+    } else {
+      currentList().push({ kind: "replacement", key: replacementKey(body) });
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < src.length) {
+    currentList().push({ kind: "text" });
+  }
+
+  // Any sections still open at end of input: flush their accumulated children
+  // back as text so we don't silently lose them.
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    currentList().push(...frame.children);
+  }
+
+  return root;
+}
+
+/**
+ * Anki's `template_is_empty` (with `check_negated=true`, which is the value
+ * `renders_with_fields` passes). Returns true when no Replacement reachable
+ * through satisfied conditionals references a non-empty field.
+ */
+function templateIsEmpty(nodes: ParsedNode[], nonempty: Set<string>): boolean {
+  for (const node of nodes) {
+    switch (node.kind) {
+      case "text":
+        continue;
+      case "replacement":
+        if (nonempty.has(node.key)) return false;
+        break;
+      case "section":
+        if (!nonempty.has(node.key)) continue;
+        if (!templateIsEmpty(node.children, nonempty)) return false;
+        break;
+      case "negated":
+        if (nonempty.has(node.key)) continue;
+        if (!templateIsEmpty(node.children, nonempty)) return false;
+        break;
+    }
+  }
+  return true;
+}
+
 /**
  * Check if a template should generate a card for the given note.
- * A card is generated if the question side would render non-empty content.
- * Simple heuristic: check if any field referenced in the question template is non-empty.
+ *
+ * Mirrors Anki's `ParsedTemplate::renders_with_fields`: build the set of
+ * non-empty field names on the note, then walk the parsed template AST and
+ * return true iff any reachable Replacement references a field in that set.
  */
 function templateHasContent(note: Note, templateOrd: number): boolean {
   const tmpl = note.model.templates[templateOrd];
   if (!tmpl) return false;
 
-  const qfmt = tmpl.questionFormat;
-  const fieldPattern = /\{\{([^#/}]+?)\}\}/g;
-  let match;
-  let hasAnyField = false;
-
-  while ((match = fieldPattern.exec(qfmt)) !== null) {
-    const fieldRef = match[1].trim();
-    // Skip special references
-    if (fieldRef === "FrontSide" || fieldRef.startsWith("type:")) {
-      // For type: references, extract the field name after "type:"
-      const actualField = fieldRef.startsWith("type:") ? fieldRef.slice(5) : fieldRef;
-      if (actualField === "FrontSide") continue;
-      const fieldIdx = note.model.fields.findIndex((f) => f.name === actualField);
-      if (fieldIdx >= 0 && (note.fields[fieldIdx] ?? "").trim() !== "") {
-        return true;
-      }
-      hasAnyField = true;
-      continue;
-    }
-    const fieldIdx = note.model.fields.findIndex((f) => f.name === fieldRef);
-    if (fieldIdx >= 0) {
-      hasAnyField = true;
-      if ((note.fields[fieldIdx] ?? "").trim() !== "") {
-        return true;
-      }
+  const nonempty = new Set<string>();
+  for (let i = 0; i < note.model.fields.length; i++) {
+    if (!fieldIsEmpty(note.fields[i] ?? "")) {
+      nonempty.add(note.model.fields[i].name);
     }
   }
+  if (note.tags.length > 0) nonempty.add("Tags");
 
-  // If no fields found in template, generate card anyway
-  return !hasAnyField;
+  const parsed = parseTemplate(tmpl.questionFormat);
+  return !templateIsEmpty(parsed, nonempty);
 }
