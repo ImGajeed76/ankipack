@@ -1,9 +1,9 @@
 import type { SqlJsStatic, Database } from "sql.js";
 import type { Deck } from "./deck.js";
 import { NO_PRESET } from "./deck.js";
+import { DeckConfig } from "./deck-config.js";
 import type { Model } from "./model.js";
 import type { Note } from "./note.js";
-import type { DeckConfig } from "./deck-config.js";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { DeckConfig_ConfigSchema } from "./generated/anki/deck_config_pb.js";
 import {
@@ -204,11 +204,15 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
     let cardPosition = 0;
 
     // Decks with a real config get the config row inserted; decks created with
-    // `config: null` skip the insert entirely and reference Anki's built-in
-    // id=1 default preset on import (see insertDeck below).
+    // `config: null` skip their own config row and reference Anki's built-in
+    // id=1 default preset on import (see insertDeck below + the placeholder
+    // block after the loop).
+    let needPlaceholderConfig = false;
     for (const deck of decks) {
       const config = deck.getEffectiveConfig();
-      if (config !== NO_PRESET && !insertedConfigs.has(config.id)) {
+      if (config === NO_PRESET) {
+        needPlaceholderConfig = true;
+      } else if (!insertedConfigs.has(config.id)) {
         insertDeckConfig(db, config, now);
         insertedConfigs.add(config.id);
       }
@@ -226,6 +230,21 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
           insertedModels.add(note.model.id);
         }
       }
+    }
+
+    // Anki's import path runs a `gather_data` pass on the apkg's temp
+    // collection that resolves every deck's `config_id` against the apkg's
+    // own `deck_config` table. A NO_PRESET deck points at id=1 (Anki's
+    // built-in Default preset), so the apkg must contain a placeholder row
+    // at id=1 or the gather phase fails with "No such deck config: '1'".
+    //
+    // The placeholder is harmless on the user's side: Anki's importer uses
+    // `INSERT OR IGNORE INTO deck_config` (rslib/.../add_if_unique.sql), so
+    // the row is silently dropped on collision with the user's existing
+    // Default preset, leaving any customisations they've made intact.
+    if (needPlaceholderConfig && !insertedConfigs.has(1)) {
+      insertDeckConfig(db, new DeckConfig({ id: 1, name: "Default" }), now);
+      insertedConfigs.add(1);
     }
 
     // Insert all notes and their cards

@@ -1,12 +1,24 @@
 # Changelog
 
+## 0.1.3
+
+- Fix: `Deck({ config: null })` apkgs no longer fail import with "No such
+  deck config: '1'". Anki's apkg importer runs a gather pass on the apkg's
+  temp collection that resolves every deck's `config_id` against the apkg's
+  own `deck_config` table, so an empty table (as 0.1.2 produced) failed
+  validation. We now ship a single placeholder row at id=1 named "Default";
+  Anki's merge step uses `INSERT OR IGNORE`, so the row is silently dropped
+  on collision with the user's existing Default preset and nothing in their
+  setup is overwritten.
+
 ## 0.1.2
 
-- Feature: `Deck({ config: null })` ships no `deck_config` row and points the
-  deck at Anki's built-in default preset (id=1) on import. Previously,
-  omitting `config` always inserted an auto-generated minimal preset, which
-  meant every imported deck added a new entry to the user's deck options
-  list. The new sentinel makes "use the user's default preset" expressible.
+- Feature: `Deck({ config: null })` ships no per-deck `deck_config` row and
+  points the deck at Anki's built-in default preset (id=1) on import.
+  Previously, omitting `config` always inserted an auto-generated minimal
+  preset, which meant every imported deck added a new entry to the user's
+  deck options list. The new sentinel makes "use the user's default preset"
+  expressible.
 
 ## 0.1.1
 

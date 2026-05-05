@@ -296,7 +296,7 @@ describe("Deck config", () => {
     expect(rows[0].values[0][0]).not.toBe(1);
   });
 
-  test("config: null ships NO preset row and points the deck at id=1", async () => {
+  test("config: null points the deck at id=1 with a placeholder Default row", async () => {
     const model = Model.basic();
     const deck = new Deck({ name: "No Cfg", config: null });
     deck.addNote(new Note({ model, fields: ["a", "b"] }));
@@ -308,9 +308,14 @@ describe("Deck config", () => {
     const { unzipSync } = await import("fflate");
     const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
 
-    // No deck_config rows at all.
-    const cfgRows = db.exec("SELECT id FROM deck_config");
-    expect(cfgRows).toHaveLength(0);
+    // Exactly one deck_config row, at id=1 named "Default". Anki's apkg
+    // gather pass requires every deck.config_id to resolve inside the apkg;
+    // its INSERT OR IGNORE merge step drops this row on collision with the
+    // user's existing Default preset.
+    const cfgRows = db.exec("SELECT id, name FROM deck_config");
+    expect(cfgRows[0].values).toHaveLength(1);
+    expect(cfgRows[0].values[0][0]).toBe(1);
+    expect(cfgRows[0].values[0][1]).toBe("Default");
 
     // Deck row's protobuf kind blob includes config_id=1 (varint encoding).
     // Wire format for a single nested NormalDeck with config_id=1 is:
@@ -320,5 +325,26 @@ describe("Deck config", () => {
     expect(Array.from(kind.slice(0, 4))).toEqual([0x0a, 0x02, 0x08, 0x01]);
 
     db.close();
+  });
+
+  test("only ships one placeholder when multiple decks are NO_PRESET", async () => {
+    const model = Model.basic();
+    const deckA = new Deck({ name: "A", config: null });
+    const deckB = new Deck({ name: "B", config: null });
+    deckA.addNote(new Note({ model, fields: ["a", "b"] }));
+    deckB.addNote(new Note({ model, fields: ["c", "d"] }));
+
+    const pkg = new Package();
+    pkg.addDeck(deckA);
+    pkg.addDeck(deckB);
+    const bytes = await pkg.toUint8Array(SQL);
+
+    const { unzipSync } = await import("fflate");
+    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
+    const cfgRows = db.exec("SELECT id FROM deck_config");
+    db.close();
+
+    expect(cfgRows[0].values).toHaveLength(1);
+    expect(cfgRows[0].values[0][0]).toBe(1);
   });
 });
