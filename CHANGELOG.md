@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- Feature: `Deck({ config: null })` ships no `deck_config` row and points the
+  deck at Anki's built-in default preset (id=1) on import. Previously,
+  omitting `config` always inserted an auto-generated minimal preset, which
+  meant every imported deck added a new entry to the user's deck options
+  list. The new sentinel makes "use the user's default preset" expressible.
+
 ## 0.1.1
 
 - Fix: `templateHasContent` now honors mustache section gating

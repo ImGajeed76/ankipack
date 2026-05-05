@@ -1,6 +1,6 @@
 {
   "name": "ankipack",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Generate Anki .apkg decks with full FSRS support. Works in browsers, Node.js, and Bun.",
   "type": "module",
   "main": "./dist/index.js",

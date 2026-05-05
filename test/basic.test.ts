@@ -273,3 +273,52 @@ describe("Package", () => {
     db.close();
   });
 });
+
+describe("Deck config", () => {
+  test("config: undefined ships an auto-generated preset row", async () => {
+    const model = Model.basic();
+    const deck = new Deck({ name: "Auto Cfg" });
+    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const bytes = await pkg.toUint8Array(SQL);
+
+    const { unzipSync } = await import("fflate");
+    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
+    const rows = db.exec("SELECT id, name FROM deck_config");
+    db.close();
+
+    // One row, name derived from deck name, id != 1 (ankipack must not clobber
+    // the user's existing default preset).
+    expect(rows[0].values).toHaveLength(1);
+    expect(rows[0].values[0][1]).toBe("Auto Cfg Config");
+    expect(rows[0].values[0][0]).not.toBe(1);
+  });
+
+  test("config: null ships NO preset row and points the deck at id=1", async () => {
+    const model = Model.basic();
+    const deck = new Deck({ name: "No Cfg", config: null });
+    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const bytes = await pkg.toUint8Array(SQL);
+
+    const { unzipSync } = await import("fflate");
+    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
+
+    // No deck_config rows at all.
+    const cfgRows = db.exec("SELECT id FROM deck_config");
+    expect(cfgRows).toHaveLength(0);
+
+    // Deck row's protobuf kind blob includes config_id=1 (varint encoding).
+    // Wire format for a single nested NormalDeck with config_id=1 is:
+    //   0a 02 08 01  (tag 1 length-delim, len 2, then field 1 varint = 1)
+    const deckRows = db.exec("SELECT kind FROM decks");
+    const kind = new Uint8Array(deckRows[0].values[0][0] as Uint8Array);
+    expect(Array.from(kind.slice(0, 4))).toEqual([0x0a, 0x02, 0x08, 0x01]);
+
+    db.close();
+  });
+});

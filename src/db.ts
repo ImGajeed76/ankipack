@@ -1,5 +1,6 @@
 import type { SqlJsStatic, Database } from "sql.js";
 import type { Deck } from "./deck.js";
+import { NO_PRESET } from "./deck.js";
 import type { Model } from "./model.js";
 import type { Note } from "./note.js";
 import type { DeckConfig } from "./deck-config.js";
@@ -202,11 +203,12 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
     // Card position counter (controls new card order)
     let cardPosition = 0;
 
-    // Ensure every deck has an explicit config — never rely on id=1 default
-    // which would overwrite the user's existing default preset on import
+    // Decks with a real config get the config row inserted; decks created with
+    // `config: null` skip the insert entirely and reference Anki's built-in
+    // id=1 default preset on import (see insertDeck below).
     for (const deck of decks) {
       const config = deck.getEffectiveConfig();
-      if (!insertedConfigs.has(config.id)) {
+      if (config !== NO_PRESET && !insertedConfigs.has(config.id)) {
         insertDeckConfig(db, config, now);
         insertedConfigs.add(config.id);
       }
@@ -254,8 +256,15 @@ function insertDeck(db: Database, deck: Deck, now: number): void {
   const common = create(Deck_CommonSchema, {});
   const commonBytes = toBinary(Deck_CommonSchema, common);
 
+  // Anki guarantees a built-in default preset at id=1 in every collection
+  // (rslib hardcodes DeckConfigId(1).unwrap()). Decks marked NO_PRESET
+  // reference it directly so the imported deck inherits the user's existing
+  // default scheduling and no new preset appears in their preset list.
+  const config = deck.getEffectiveConfig();
+  const configId = config === NO_PRESET ? 1n : BigInt(config.id);
+
   const normal = create(Deck_NormalSchema, {
-    configId: BigInt(deck.getEffectiveConfig().id),
+    configId,
     description: deck.description ?? "",
   });
   const kindContainer = create(Deck_KindContainerSchema, {
