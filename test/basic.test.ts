@@ -1,350 +1,259 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import initSqlJs, { type SqlJsStatic } from "sql.js";
+import { describe, test, expect } from "bun:test";
 import { Package, Deck, DeckConfig, Model, Note } from "../src/index";
+import { openPackage, column, scalar, query, getSql } from "./helpers/collection";
 
-let SQL: SqlJsStatic;
+// Named behavioural rules. The golden dumps already cover the full shape of a
+// generated collection, so this file only states the rules a reader should be
+// able to find by name, most of them about what lands in someone's collection.
 
-beforeAll(async () => {
-  SQL = await initSqlJs();
+describe("API contract", () => {
+  test("a note whose field count differs from its model is rejected", () => {
+    const model = Model.basic();
+    expect(() => new Note({ model, fields: ["only one"] })).toThrow('model "Basic" expects 2');
+  });
+
+  test("a package with no decks is rejected", async () => {
+    const pkg = new Package();
+    await expect(pkg.toUint8Array(await getSql())).rejects.toThrow("at least one deck");
+  });
 });
 
-describe("Package", () => {
-  test("generates a valid .apkg with a basic deck", async () => {
-    const model = Model.basic();
-    const deck = new Deck({ name: "Test Deck" });
+describe("card generation", () => {
+  async function cardOrdinals(deck: Deck): Promise<number[]> {
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const opened = await openPackage(pkg);
+    try {
+      return column(opened.db, "SELECT ord FROM cards ORDER BY ord").map(Number);
+    } finally {
+      opened.db.close();
+    }
+  }
 
+  test("a basic note generates one card", async () => {
+    const deck = new Deck({ name: "Basic" });
+    deck.addNote(new Note({ model: Model.basic(), fields: ["Q", "A"] }));
+    expect(await cardOrdinals(deck)).toEqual([0]);
+  });
+
+  test("a reversed note generates one card per template", async () => {
+    const deck = new Deck({ name: "Reversed" });
+    deck.addNote(new Note({ model: Model.basicAndReversed(), fields: ["Q", "A"] }));
+    expect(await cardOrdinals(deck)).toEqual([0, 1]);
+  });
+
+  test("a template whose fields are all empty generates no card", async () => {
+    const deck = new Deck({ name: "Empty Back" });
+    deck.addNote(new Note({ model: Model.basicAndReversed(), fields: ["front only", ""] }));
+    expect(await cardOrdinals(deck)).toEqual([0]);
+  });
+
+  test("cloze generates one card per distinct deletion, ordinals 0-based", async () => {
+    const deck = new Deck({ name: "Cloze" });
     deck.addNote(
-      new Note({
-        model,
-        fields: ["Hello", "World"],
-      }),
+      new Note({ model: Model.cloze(), fields: ["{{c1::a}} and {{c2::b}} and {{c1::c}}", ""] }),
     );
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(bytes.length).toBeGreaterThan(0);
-
-    // Verify it's a valid ZIP (starts with PK header)
-    expect(bytes[0]).toBe(0x50); // P
-    expect(bytes[1]).toBe(0x4b); // K
+    expect(await cardOrdinals(deck)).toEqual([0, 1]);
   });
 
-  test("generates correct number of cards for basic model", async () => {
-    const model = Model.basic();
-    const deck = new Deck({ name: "Card Count Test" });
+  test("cloze with no deletions still generates one card", async () => {
+    const deck = new Deck({ name: "Cloze Plain" });
+    deck.addNote(new Note({ model: Model.cloze(), fields: ["no deletions here", ""] }));
+    expect(await cardOrdinals(deck)).toEqual([0]);
+  });
+});
 
-    deck.addNote(new Note({ model, fields: ["Q1", "A1"] }));
-    deck.addNote(new Note({ model, fields: ["Q2", "A2"] }));
-    deck.addNote(new Note({ model, fields: ["Q3", "A3"] }));
-
+describe("deck presets", () => {
+  async function deckConfigRows(...decks: Deck[]): Promise<Array<[number, string]>> {
     const pkg = new Package();
-    pkg.addDeck(deck);
+    for (const deck of decks) pkg.addDeck(deck);
+    const opened = await openPackage(pkg);
+    try {
+      return query(opened.db, "SELECT id, name FROM deck_config ORDER BY id").values.map(
+        (row) => [Number(row[0]), String(row[1])] as [number, string],
+      );
+    } finally {
+      opened.db.close();
+    }
+  }
 
-    const bytes = await pkg.toUint8Array(SQL);
+  // One shared model: two Model instances with the same name in one package
+  // collide on the notetypes name unique index.
+  const model = Model.basic();
 
-    // Extract and verify the SQLite database from the ZIP
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const dbBytes = files["collection.anki2"];
-    expect(dbBytes).toBeDefined();
+  function deckWithNote(options: ConstructorParameters<typeof Deck>[0]): Deck {
+    const deck = new Deck(options);
+    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+    return deck;
+  }
 
-    const db = new SQL.Database(dbBytes);
-
-    // Check notes count
-    const noteCount = db.exec("SELECT COUNT(*) FROM notes")[0].values[0][0];
-    expect(noteCount).toBe(3);
-
-    // Check cards count (1 template = 1 card per note)
-    const cardCount = db.exec("SELECT COUNT(*) FROM cards")[0].values[0][0];
-    expect(cardCount).toBe(3);
-
-    // Check schema version
-    const ver = db.exec("SELECT ver FROM col")[0].values[0][0];
-    expect(ver).toBe(18);
-
-    db.close();
+  // id=1 is Anki's built-in Default preset. Shipping a real preset there would
+  // overwrite whatever the user has configured on it.
+  test("an omitted config ships a generated preset named after the deck, never at id 1", async () => {
+    const rows = await deckConfigRows(deckWithNote({ name: "Auto Cfg" }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0][1]).toBe("Auto Cfg Config");
+    expect(rows[0][0]).not.toBe(1);
   });
 
-  test("generates 2 cards per note for basic-and-reversed model", async () => {
-    const model = Model.basicAndReversed();
-    const deck = new Deck({ name: "Reversed Test" });
-
-    deck.addNote(new Note({ model, fields: ["Front", "Back"] }));
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    const cardCount = db.exec("SELECT COUNT(*) FROM cards")[0].values[0][0];
-    expect(cardCount).toBe(2);
-
-    db.close();
+  test("config: null ships only the id=1 placeholder Anki's gather pass needs", async () => {
+    const rows = await deckConfigRows(deckWithNote({ name: "No Cfg", config: null }));
+    expect(rows).toEqual([[1, "Default"]]);
   });
 
-  test("stores FSRS deck config in protobuf", async () => {
-    const config = new DeckConfig({
-      name: "FSRS Config",
-      desiredRetention: 0.95,
-      learnSteps: [1, 10],
-      relearnSteps: [10],
-      newPerDay: 140,
-      reviewsPerDay: 9999,
-      maximumReviewInterval: 4,
-      buryNew: true,
-      buryReviews: true,
+  test("several config: null decks still ship exactly one placeholder", async () => {
+    const rows = await deckConfigRows(
+      deckWithNote({ name: "A", config: null }),
+      deckWithNote({ name: "B", config: null }),
+    );
+    expect(rows).toEqual([[1, "Default"]]);
+  });
+
+  test("an explicit config is shipped under its own name, never at id 1", async () => {
+    const config = new DeckConfig({ name: "Exam Preset", desiredRetention: 0.95 });
+    const rows = await deckConfigRows(deckWithNote({ name: "Exam", config }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0][1]).toBe("Exam Preset");
+    expect(rows[0][0]).not.toBe(1);
+  });
+
+  test("decks sharing one config object ship a single preset row", async () => {
+    const config = new DeckConfig({ name: "Shared" });
+    const rows = await deckConfigRows(
+      deckWithNote({ name: "One", config }),
+      deckWithNote({ name: "Two", config }),
+    );
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe("note contents", () => {
+  test("tags are stored space-delimited and space-padded", async () => {
+    const deck = new Deck({ name: "Tags" });
+    deck.addNote(
+      new Note({ model: Model.basic(), fields: ["Q", "A"], tags: ["vocab", "chapter1"] }),
+    );
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const opened = await openPackage(pkg);
+    try {
+      expect(scalar(opened.db, "SELECT tags FROM notes")).toBe(" vocab chapter1 ");
+    } finally {
+      opened.db.close();
+    }
+  });
+
+  test("an untagged note stores an empty tag string", async () => {
+    const deck = new Deck({ name: "Untagged" });
+    deck.addNote(new Note({ model: Model.basic(), fields: ["Q", "A"] }));
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const opened = await openPackage(pkg);
+    try {
+      expect(scalar(opened.db, "SELECT tags FROM notes")).toBe("");
+    } finally {
+      opened.db.close();
+    }
+  });
+
+  test("sortFieldIndex chooses which field is written to sfld", async () => {
+    const model = new Model({
+      name: "Sorted",
+      sortFieldIndex: 1,
+      fields: [{ name: "First" }, { name: "Second" }],
+      templates: [{ name: "Card 1", questionFormat: "{{First}}", answerFormat: "{{Second}}" }],
     });
+    const deck = new Deck({ name: "Sorting" });
+    deck.addNote(new Note({ model, fields: ["ignored", "sort on me"] }));
+    const pkg = new Package();
+    pkg.addDeck(deck);
+    const opened = await openPackage(pkg);
+    try {
+      expect(scalar(opened.db, "SELECT sfld FROM notes")).toBe("sort on me");
+    } finally {
+      opened.db.close();
+    }
+  });
 
+  // Anki dedupes on the first field's checksum, so it must depend on that field
+  // alone. If it drifted to cover every field, duplicate detection would break.
+  test("csum is derived from the first field only", async () => {
     const model = Model.basic();
-    const deck = new Deck({ name: "FSRS Deck", config });
-    deck.addNote(new Note({ model, fields: ["Q", "A"] }));
+    const deck = new Deck({ name: "Checksums" });
+    deck.addNote(new Note({ model, fields: ["same front", "one back"] }));
+    deck.addNote(new Note({ model, fields: ["same front", "other back"] }));
+    deck.addNote(new Note({ model, fields: ["different front", "one back"] }));
 
     const pkg = new Package();
     pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    // Verify deck_config table has our custom config (no id=1 default that would overwrite user's)
-    const configs = db.exec("SELECT name FROM deck_config WHERE name = 'FSRS Config'");
-    expect(configs.length).toBe(1);
-    expect(configs[0].values.length).toBe(1);
-
-    // Verify the deck references the config
-    const deckRows = db.exec("SELECT id, name FROM decks");
-    expect(deckRows.length).toBe(1);
-    expect(deckRows[0].values[0][1]).toBe("FSRS Deck");
-
-    db.close();
-  });
-
-  test("handles cloze deletions", async () => {
-    const model = Model.cloze();
-    const deck = new Deck({ name: "Cloze Test" });
-
-    deck.addNote(
-      new Note({
-        model,
-        fields: ["{{c1::Paris}} is the capital of {{c2::France}}", ""],
-      }),
-    );
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    // Should have 2 cards (c1 and c2)
-    const cardCount = db.exec("SELECT COUNT(*) FROM cards")[0].values[0][0];
-    expect(cardCount).toBe(2);
-
-    // Check card ordinals
-    const ords = db.exec("SELECT ord FROM cards ORDER BY ord");
-    expect(ords[0].values[0][0]).toBe(0); // c1
-    expect(ords[0].values[1][0]).toBe(1); // c2
-
-    db.close();
-  });
-
-  test("handles media files", async () => {
-    const model = Model.basic();
-    const deck = new Deck({ name: "Media Test" });
-    deck.addNote(
-      new Note({
-        model,
-        fields: ['<img src="test.png">', "Answer"],
-      }),
-    );
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-    pkg.addMedia("test.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync, strFromU8 } = await import("fflate");
-    const files = unzipSync(bytes);
-
-    // Check media index
-    const mediaJson = JSON.parse(strFromU8(files["media"]));
-    expect(mediaJson["0"]).toBe("test.png");
-
-    // Check media file exists
-    expect(files["0"]).toBeDefined();
-    expect(files["0"][0]).toBe(0x89); // PNG header byte
-  });
-
-  test("handles tags", async () => {
-    const model = Model.basic();
-    const deck = new Deck({ name: "Tags Test" });
-    deck.addNote(
-      new Note({
-        model,
-        fields: ["Q", "A"],
-        tags: ["vocab", "chapter1"],
-      }),
-    );
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    const tags = db.exec("SELECT tags FROM notes")[0].values[0][0];
-    expect(tags).toBe(" vocab chapter1 ");
-
-    db.close();
-  });
-
-  test("validates field count matches model", () => {
-    const model = Model.basic();
-    expect(() => {
-      new Note({ model, fields: ["only one"] });
-    }).toThrow('model "Basic" expects 2');
-  });
-
-  test("rejects empty package", async () => {
-    const pkg = new Package();
-    expect(pkg.toUint8Array(SQL)).rejects.toThrow("at least one deck");
-  });
-
-  test("multiple decks in one package", async () => {
-    const model = Model.basic();
-
-    const deck1 = new Deck({ name: "Deck A" });
-    deck1.addNote(new Note({ model, fields: ["Q1", "A1"] }));
-
-    const deck2 = new Deck({ name: "Deck B" });
-    deck2.addNote(new Note({ model, fields: ["Q2", "A2"] }));
-
-    const pkg = new Package();
-    pkg.addDeck(deck1);
-    pkg.addDeck(deck2);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    const deckCount = db.exec("SELECT COUNT(*) FROM decks")[0].values[0][0];
-    expect(deckCount).toBe(2);
-
-    const noteCount = db.exec("SELECT COUNT(*) FROM notes")[0].values[0][0];
-    expect(noteCount).toBe(2);
-
-    db.close();
-  });
-
-  test("card positions are sequential across notes", async () => {
-    const model = Model.basic();
-    const deck = new Deck({ name: "Position Test" });
-
-    deck.addNote(new Note({ model, fields: ["Q1", "A1"] }));
-    deck.addNote(new Note({ model, fields: ["Q2", "A2"] }));
-    deck.addNote(new Note({ model, fields: ["Q3", "A3"] }));
-
-    const pkg = new Package();
-    pkg.addDeck(deck);
-
-    const bytes = await pkg.toUint8Array(SQL);
-    const { unzipSync } = await import("fflate");
-    const files = unzipSync(bytes);
-    const db = new SQL.Database(files["collection.anki2"]);
-
-    const dues = db.exec("SELECT due FROM cards ORDER BY due");
-    expect(dues[0].values[0][0]).toBe(0);
-    expect(dues[0].values[1][0]).toBe(1);
-    expect(dues[0].values[2][0]).toBe(2);
-
-    db.close();
+    const opened = await openPackage(pkg);
+    try {
+      const [first, second, third] = column(opened.db, "SELECT csum FROM notes ORDER BY id");
+      expect(first).toBe(second);
+      expect(first).not.toBe(third);
+    } finally {
+      opened.db.close();
+    }
   });
 });
 
-describe("Deck config", () => {
-  test("config: undefined ships an auto-generated preset row", async () => {
+describe("packaging", () => {
+  test("cards are filed under the deck their note was added to", async () => {
     const model = Model.basic();
-    const deck = new Deck({ name: "Auto Cfg" });
-    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+    const first = new Deck({ name: "First" });
+    const second = new Deck({ name: "Second" });
+    first.addNote(new Note({ model, fields: ["one", "eins"] }));
+    second.addNote(new Note({ model, fields: ["two", "zwei"] }));
 
     const pkg = new Package();
-    pkg.addDeck(deck);
-    const bytes = await pkg.toUint8Array(SQL);
-
-    const { unzipSync } = await import("fflate");
-    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
-    const rows = db.exec("SELECT id, name FROM deck_config");
-    db.close();
-
-    // One row, name derived from deck name, id != 1 (ankipack must not clobber
-    // the user's existing default preset).
-    expect(rows[0].values).toHaveLength(1);
-    expect(rows[0].values[0][1]).toBe("Auto Cfg Config");
-    expect(rows[0].values[0][0]).not.toBe(1);
+    pkg.addDeck(first);
+    pkg.addDeck(second);
+    const opened = await openPackage(pkg);
+    try {
+      const rows = query(
+        opened.db,
+        "SELECT d.name, n.sfld FROM cards c JOIN decks d ON d.id = c.did JOIN notes n ON n.id = c.nid ORDER BY d.name",
+      ).values;
+      expect(rows).toEqual([
+        ["First", "one"],
+        ["Second", "two"],
+      ]);
+    } finally {
+      opened.db.close();
+    }
   });
 
-  test("config: null points the deck at id=1 with a placeholder Default row", async () => {
+  test("a model used by several decks is inserted once", async () => {
     const model = Model.basic();
-    const deck = new Deck({ name: "No Cfg", config: null });
-    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+    const first = new Deck({ name: "First" });
+    const second = new Deck({ name: "Second" });
+    first.addNote(new Note({ model, fields: ["a", "b"] }));
+    second.addNote(new Note({ model, fields: ["c", "d"] }));
 
     const pkg = new Package();
-    pkg.addDeck(deck);
-    const bytes = await pkg.toUint8Array(SQL);
-
-    const { unzipSync } = await import("fflate");
-    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
-
-    // Exactly one deck_config row, at id=1 named "Default". Anki's apkg
-    // gather pass requires every deck.config_id to resolve inside the apkg;
-    // its INSERT OR IGNORE merge step drops this row on collision with the
-    // user's existing Default preset.
-    const cfgRows = db.exec("SELECT id, name FROM deck_config");
-    expect(cfgRows[0].values).toHaveLength(1);
-    expect(cfgRows[0].values[0][0]).toBe(1);
-    expect(cfgRows[0].values[0][1]).toBe("Default");
-
-    // Deck row's protobuf kind blob includes config_id=1 (varint encoding).
-    // Wire format for a single nested NormalDeck with config_id=1 is:
-    //   0a 02 08 01  (tag 1 length-delim, len 2, then field 1 varint = 1)
-    const deckRows = db.exec("SELECT kind FROM decks");
-    const kind = new Uint8Array(deckRows[0].values[0][0] as Uint8Array);
-    expect(Array.from(kind.slice(0, 4))).toEqual([0x0a, 0x02, 0x08, 0x01]);
-
-    db.close();
+    pkg.addDeck(first);
+    pkg.addDeck(second);
+    const opened = await openPackage(pkg);
+    try {
+      expect(column(opened.db, "SELECT COUNT(*) FROM notetypes")).toEqual([1]);
+    } finally {
+      opened.db.close();
+    }
   });
 
-  test("only ships one placeholder when multiple decks are NO_PRESET", async () => {
-    const model = Model.basic();
-    const deckA = new Deck({ name: "A", config: null });
-    const deckB = new Deck({ name: "B", config: null });
-    deckA.addNote(new Note({ model, fields: ["a", "b"] }));
-    deckB.addNote(new Note({ model, fields: ["c", "d"] }));
-
+  test("media files are indexed by position and stored under that name", async () => {
+    const deck = new Deck({ name: "Media" });
+    deck.addNote(new Note({ model: Model.basic(), fields: ['<img src="diagram.png">', "answer"] }));
     const pkg = new Package();
-    pkg.addDeck(deckA);
-    pkg.addDeck(deckB);
-    const bytes = await pkg.toUint8Array(SQL);
+    pkg.addDeck(deck);
+    pkg.addMedia("diagram.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
 
-    const { unzipSync } = await import("fflate");
-    const db = new SQL.Database(unzipSync(bytes)["collection.anki2"]);
-    const cfgRows = db.exec("SELECT id FROM deck_config");
-    db.close();
-
-    expect(cfgRows[0].values).toHaveLength(1);
-    expect(cfgRows[0].values[0][0]).toBe(1);
+    const opened = await openPackage(pkg);
+    try {
+      expect(opened.mediaIndex).toEqual({ "0": "diagram.png" });
+      expect(Array.from(opened.entries["0"])).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    } finally {
+      opened.db.close();
+    }
   });
 });
