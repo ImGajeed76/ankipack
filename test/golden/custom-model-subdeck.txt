@@ -87,7 +87,7 @@
 == decks (1 row) ==
   row 0
     id: deck#1
-    name: "Languages::French::Chapter 1"
+    name: "Languages\u001fFrench\u001fChapter 1"
     mtime_secs: time#1
     usn: -1
     common: {}
@@ -105,9 +105,9 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "css": ".card {\n  font-family: arial;\n  font-size: 20px;\n  text-align: center;\n  color: black;\n  background-color: white;\n}",
+      "css": ".card {\n    font-family: arial;\n    font-size: 20px;\n    line-height: 1.5;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n",
       "latexPost": "\\end{document}",
-      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}",
+      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
       "reqs": [
         {
           "fieldOrds": [
@@ -126,7 +126,8 @@
     name: "French"
     config: {
       "fontName": "Arial",
-      "fontSize": 24
+      "fontSize": 24,
+      "id": "2321458954647879293"
     }
   row 1
     ntid: nt#1
@@ -136,6 +137,7 @@
       "description": "Zielsprache",
       "fontName": "Arial",
       "fontSize": 20,
+      "id": "860696317379480040",
       "sticky": true
     }
   row 2
@@ -145,6 +147,7 @@
     config: {
       "fontName": "Arial",
       "fontSize": 20,
+      "id": "4363492701134711343",
       "plainText": true
     }
 
@@ -157,6 +160,7 @@
     usn: -1
     config: {
       "aFormat": "{{FrontSide}}<hr id=\"answer\">{{German}}{{#Note}}<br>{{Note}}{{/Note}}",
+      "id": "772339967667023020",
       "qFormat": "{{French}}"
     }
 

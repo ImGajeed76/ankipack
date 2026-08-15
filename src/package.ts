@@ -33,6 +33,34 @@ export class Package {
    * Reference it in card templates via its filename (e.g. `<img src="photo.jpg">`).
    */
   addMedia(filename: string, data: Uint8Array): void {
+    // Anki's `filename_is_safe` requires exactly one normal path component, and
+    // one bad name makes it reject the entire archive as corrupt.
+    const unsafe =
+      filename.length === 0 ||
+      filename.includes("/") ||
+      filename.includes("\\") ||
+      filename === "." ||
+      filename === "..";
+    if (unsafe) {
+      throw new Error(
+        `Media filename ${JSON.stringify(filename)} is not a plain filename: ` +
+          `Anki rejects the whole package for it`,
+      );
+    }
+
+    // Anki normalises filenames to NFC on import and keys them in a map, so two
+    // names that differ only by composition collapse into one and the loser's
+    // bytes are silently dropped.
+    const normalized = filename.normalize("NFC");
+    for (const existing of this.media.keys()) {
+      if (existing !== filename && existing.normalize("NFC") === normalized) {
+        throw new Error(
+          `Media filename ${JSON.stringify(filename)} collides with ` +
+            `${JSON.stringify(existing)} once Anki normalises it to NFC`,
+        );
+      }
+    }
+
     this.media.set(filename, data);
   }
 
@@ -70,7 +98,7 @@ export class Package {
     // Add media index JSON
     zipEntries["media"] = strToU8(JSON.stringify(mediaIndex));
 
-    // Create ZIP (store, no compression — the SQLite DB doesn't compress well
+    // Create ZIP (store, no compression: the SQLite DB doesn't compress well
     // and Anki doesn't require compression)
     return zipSync(zipEntries, { level: 0 });
   }

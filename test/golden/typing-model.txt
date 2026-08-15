@@ -104,9 +104,10 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "css": ".card {\n  font-family: arial;\n  font-size: 20px;\n  text-align: center;\n  color: black;\n  background-color: white;\n}",
+      "css": ".card {\n    font-family: arial;\n    font-size: 20px;\n    line-height: 1.5;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n",
       "latexPost": "\\end{document}",
-      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}",
+      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+      "originalStockKind": "ORIGINAL_STOCK_KIND_BASIC_TYPING",
       "reqs": [
         {
           "fieldOrds": [
@@ -125,7 +126,8 @@
     name: "Front"
     config: {
       "fontName": "Arial",
-      "fontSize": 20
+      "fontSize": 20,
+      "id": "6724029326726867425"
     }
   row 1
     ntid: nt#1
@@ -133,7 +135,8 @@
     name: "Back"
     config: {
       "fontName": "Arial",
-      "fontSize": 20
+      "fontSize": 20,
+      "id": "4373180076799034402"
     }
 
 == templates (1 row) ==
@@ -144,7 +147,8 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "aFormat": "{{Front}}\n\n<hr id=\"answer\">\n\n{{type:Back}}",
+      "aFormat": "{{Front}}\n\n<hr id=answer>\n\n{{type:Back}}",
+      "id": "2232687928315105017",
       "qFormat": "{{Front}}\n\n{{type:Back}}"
     }
 

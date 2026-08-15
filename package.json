@@ -16,13 +16,13 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "bun test",
+    "test": "bun test ./test",
     "check": "tsc --noEmit",
     "lint": "bunx eslint src/",
     "format": "bunx prettier --write src/",
     "format:check": "bunx prettier --check src/",
     "generate": "bunx buf generate",
-    "prepublishOnly": "bun run build && bun test"
+    "prepublishOnly": "bun run build && bun run test"
   },
   "keywords": [
     "anki",

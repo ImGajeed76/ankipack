@@ -1,6 +1,6 @@
 export { Package } from "./package.js";
-export { Deck } from "./deck.js";
-export type { DeckOptions } from "./deck.js";
+export { Deck, NO_PRESET } from "./deck.js";
+export type { DeckOptions, NoPreset } from "./deck.js";
 export { DeckConfig } from "./deck-config.js";
 export type { DeckConfigOptions } from "./deck-config.js";
 export type {

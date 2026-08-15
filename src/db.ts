@@ -20,6 +20,12 @@ import { IdGenerator } from "./util/id.js";
 import { generateGuid } from "./util/guid.js";
 import { fieldChecksum } from "./util/checksum.js";
 import { FIELD_SEPARATOR } from "./util/constants.js";
+import {
+  stripHtmlPreservingMediaFilenames,
+  stripInvalidFieldChars,
+  toNativeDeckName,
+} from "./util/text.js";
+import { templateRenders } from "./util/template.js";
 
 /** All SQL to create the V18 schema */
 const SCHEMA_SQL = `
@@ -194,10 +200,13 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
       nowMs,
     ]);
 
-    // Track models we've already inserted
-    const insertedModels = new Set<number>();
+    // Track models we've already inserted, by id and by name: the schema is
+    // unique on both, and either collision otherwise surfaces as a raw
+    // SQLite error or, for a repeated id, as a silently dropped notetype.
+    const insertedModels = new Map<number, Model>();
+    const modelNames = new Map<string, Model>();
     // Track configs we've already inserted
-    const insertedConfigs = new Set<number>();
+    const insertedConfigs = new Map<number, DeckConfig>();
     // Collect all notes with their deck IDs
     const allNotes: InternalNote[] = [];
     // Card position counter (controls new card order)
@@ -208,13 +217,45 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
     // id=1 default preset on import (see insertDeck below + the placeholder
     // block after the loop).
     let needPlaceholderConfig = false;
+    // Compared after normalisation: " A " and "A" are the same native name.
+    const deckNames = new Map<string, string>();
+    const deckIds = new Map<number, string>();
     for (const deck of decks) {
+      const nativeName = toNativeDeckName(deck.name);
+      const clash = deckNames.get(nativeName);
+      if (clash !== undefined) {
+        throw new Error(
+          `Decks ${JSON.stringify(clash)} and ${JSON.stringify(deck.name)} ` +
+            `resolve to the same Anki deck name`,
+        );
+      }
+      deckNames.set(nativeName, deck.name);
+
+      const idClash = deckIds.get(deck.id);
+      if (idClash !== undefined) {
+        throw new Error(
+          `Decks ${JSON.stringify(idClash)} and ${JSON.stringify(deck.name)} ` +
+            `share id ${deck.id}`,
+        );
+      }
+      deckIds.set(deck.id, deck.name);
+
       const config = deck.getEffectiveConfig();
       if (config === NO_PRESET) {
         needPlaceholderConfig = true;
-      } else if (!insertedConfigs.has(config.id)) {
+      } else if (insertedConfigs.has(config.id)) {
+        // Only one row per id can ship, so a second preset reusing an id would
+        // silently give its deck the first preset's settings.
+        const existing = insertedConfigs.get(config.id);
+        if (existing !== config) {
+          throw new Error(
+            `Two different DeckConfigs share id ${config.id}: ` +
+              `${JSON.stringify(existing?.name)} and ${JSON.stringify(config.name)}`,
+          );
+        }
+      } else {
         insertDeckConfig(db, config, now);
-        insertedConfigs.add(config.id);
+        insertedConfigs.set(config.id, config);
       }
 
       // Insert deck
@@ -225,9 +266,26 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
         allNotes.push({ note, deckId: deck.id });
 
         // Insert model if not yet inserted
-        if (!insertedModels.has(note.model.id)) {
-          insertModel(db, note.model, now);
-          insertedModels.add(note.model.id);
+        const model = note.model;
+        const sameId = insertedModels.get(model.id);
+        if (sameId !== undefined) {
+          if (sameId !== model) {
+            throw new Error(
+              `Two different Models share id ${model.id}: ` +
+                `${JSON.stringify(sameId.name)} and ${JSON.stringify(model.name)}`,
+            );
+          }
+        } else {
+          const sameName = modelNames.get(model.name);
+          if (sameName !== undefined) {
+            throw new Error(
+              `Two different Models are both named ${JSON.stringify(model.name)}, ` +
+                `which Anki requires to be unique`,
+            );
+          }
+          insertModel(db, model, now);
+          insertedModels.set(model.id, model);
+          modelNames.set(model.name, model);
         }
       }
     }
@@ -243,8 +301,9 @@ export async function buildDatabase(SQL: SqlJsStatic, decks: Deck[]): Promise<Ui
     // the row is silently dropped on collision with the user's existing
     // Default preset, leaving any customisations they've made intact.
     if (needPlaceholderConfig && !insertedConfigs.has(1)) {
-      insertDeckConfig(db, new DeckConfig({ id: 1, name: "Default" }), now);
-      insertedConfigs.add(1);
+      const placeholder = new DeckConfig({ id: 1, name: "Default" });
+      insertDeckConfig(db, placeholder, now);
+      insertedConfigs.set(1, placeholder);
     }
 
     // Insert all notes and their cards
@@ -291,9 +350,11 @@ function insertDeck(db: Database, deck: Deck, now: number): void {
   });
   const kindBytes = toBinary(Deck_KindContainerSchema, kindContainer);
 
+  // Anki resolves parents from the native name, and creates any that are
+  // missing on import (`match_or_create_parents`), so only the leaf is shipped.
   db.run(`INSERT INTO decks (id, name, mtime_secs, usn, common, kind) VALUES (?, ?, ?, -1, ?, ?)`, [
     deck.id,
-    deck.name,
+    toNativeDeckName(deck.name),
     now,
     commonBytes,
     kindBytes,
@@ -348,9 +409,14 @@ async function insertNote(
 ): Promise<number> {
   const noteId = idGen.next();
   const guid = note.guid ?? generateGuid();
-  const flds = note.fields.join(FIELD_SEPARATOR);
-  const sortField = note.fields[note.model.sortFieldIndex ?? 0] ?? "";
-  const csum = await fieldChecksum(note.fields[0] ?? "");
+  // Card generation reads the same values that get stored, so a stripped
+  // character cannot make the cards disagree with the row.
+  const storedFields = note.fields.map(stripInvalidFieldChars);
+  const flds = storedFields.join(FIELD_SEPARATOR);
+  const sortField = stripHtmlPreservingMediaFilenames(
+    storedFields[note.model.sortFieldIndex ?? 0] ?? "",
+  );
+  const csum = await fieldChecksum(stripHtmlPreservingMediaFilenames(storedFields[0] ?? ""));
   const tags = note.tags.length > 0 ? ` ${note.tags.join(" ")} ` : "";
 
   db.run(
@@ -359,194 +425,195 @@ async function insertNote(
     [noteId, guid, note.model.id, now, tags, flds, sortField, csum],
   );
 
-  // Generate cards based on model templates
-  const templateCount = note.model.templates.length;
-  if (note.model.type === "cloze") {
-    // For cloze: find all {{cN::...}} patterns and create a card for each
-    const clozeOrds = extractClozeOrds(note.fields);
-    for (const ord of clozeOrds) {
-      const cardId = idGen.next();
-      db.run(
-        `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
-         VALUES (?, ?, ?, ?, ?, -1, 0, 0, ?, 0, 0, 0, 0, 0, 0, 0, 0, '')`,
-        [cardId, noteId, deckId, ord, now, cardPosition],
-      );
-      cardPosition++;
-    }
-  } else {
-    // For standard models: one card per template
-    for (let ord = 0; ord < templateCount; ord++) {
-      // Check if this template's required fields are filled
-      if (templateHasContent(note, ord)) {
-        const cardId = idGen.next();
-        db.run(
-          `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
-           VALUES (?, ?, ?, ?, ?, -1, 0, 0, ?, 0, 0, 0, 0, 0, 0, 0, 0, '')`,
-          [cardId, noteId, deckId, ord, now, cardPosition],
-        );
-        cardPosition++;
-      }
-    }
-  }
-
-  return cardPosition;
+  return insertCards(db, idGen, note, storedFields, noteId, deckId, now, cardPosition);
 }
 
-/** Extract cloze deletion ordinals from note fields */
+/** Returns the next free card position. */
+function insertCards(
+  db: Database,
+  idGen: IdGenerator,
+  note: Note,
+  fields: string[],
+  noteId: number,
+  deckId: number,
+  now: number,
+  startPosition: number,
+): number {
+  let position = startPosition;
+  const emit = (ord: number): void => {
+    insertCard(db, { id: idGen.next(), noteId, deckId, ord, now, position });
+    position++;
+  };
+
+  if (note.model.type === "cloze") {
+    for (const ord of extractClozeOrds(fields)) emit(ord);
+    return position;
+  }
+
+  const nonempty = nonemptyFieldNames(note, fields);
+  let generated = 0;
+  note.model.templates.forEach((tmpl, ord) => {
+    if (templateRenders(tmpl.questionFormat, nonempty)) {
+      emit(ord);
+      generated++;
+    }
+  });
+
+  // Anki's `ensure_not_empty`: card 0 is forced when no template renders.
+  if (generated === 0) emit(0);
+
+  return position;
+}
+
+interface CardRow {
+  id: number;
+  noteId: number;
+  deckId: number;
+  ord: number;
+  now: number;
+  position: number;
+}
+
+function insertCard(db: Database, card: CardRow): void {
+  db.run(
+    `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
+     VALUES (?, ?, ?, ?, ?, -1, 0, 0, ?, 0, 0, 0, 0, 0, 0, 0, 0, '')`,
+    [card.id, card.noteId, card.deckId, card.ord, card.now, card.position],
+  );
+}
+
+interface ClozeMarker {
+  values: number[];
+  children: ClozeMarker[];
+}
+
+/**
+ * Anki's cloze rules (rslib/src/cloze.rs, cardgen.rs:169): the ordinal is n-1
+ * capped at 499, c0 is dropped, and nesting is tracked only 10 deep. Never
+ * returns empty, so a cloze note is never card-less.
+ */
 function extractClozeOrds(fields: string[]): number[] {
   const ords = new Set<number>();
-  const pattern = /\{\{c(\d+)::/g;
+
   for (const field of fields) {
-    let match;
-    while ((match = pattern.exec(field)) !== null) {
-      ords.add(Number(match[1]) - 1); // 0-based
+    for (const marker of parseClozeMarkers(field)) {
+      collectClozeOrds(marker, ords);
     }
   }
+
   return ords.size > 0 ? [...ords].sort((a, b) => a - b) : [0];
 }
 
-// ── Empty-card detection (mirrors Anki's algorithm) ────────────────────────
-//
-// Source of truth: ankitects/anki, rslib/src/template.rs (`template_is_empty`)
-// and rslib/src/notetype/cardgen.rs (`is_nonempty`, `new_cards_required_normal`).
-//
-// Anki decides "should this card exist?" by parsing the question template into
-// an AST of text / replacement / section / negated-section nodes, then walking
-// the AST against the SET of field NAMES that resolve to non-empty values.
-// Plain text alone never makes a template non-empty: only a Replacement node
-// whose key is in that set counts. Section bodies are recursed into only when
-// the section's gate matches (truthy for `#`, falsy for `^`).
-//
-// `{{type:Field}}` and `{{cloze:Field}}` parse as Replacement nodes whose key
-// is "Field" (the filter prefix is dropped when computing the key). They are
-// content iff that field is non-empty, same rule as `{{Field}}`.
-//
-// `{{FrontSide}}` parses as Replacement{ key: "FrontSide" }; "FrontSide" is
-// not a real field name, so it is treated as empty for this check.
+/**
+ * A closed marker is pushed into its parent rather than harvested on the spot,
+ * so an unclosed outer marker discards everything nested inside it, the way
+ * Anki's `parse_text_with_clozes` does.
+ */
+function parseClozeMarkers(field: string): ClozeMarker[] {
+  const closed: ClozeMarker[] = [];
+  const open: ClozeMarker[] = [];
+  let index = 0;
+
+  while (index < field.length) {
+    if (field.startsWith("{{c", index)) {
+      const numbers = parseClozeNumbers(field, index + 3);
+      if (numbers) {
+        if (open.length < 10) open.push({ values: numbers.values, children: [] });
+        index = numbers.end;
+        continue;
+      }
+    }
+    if (field.startsWith("}}", index)) {
+      const marker = open.pop();
+      if (marker) {
+        (open[open.length - 1]?.children ?? closed).push(marker);
+        index += 2;
+        continue;
+      }
+    }
+    index++;
+  }
+
+  // Markers still open at the end of the field never closed, so Anki drops them
+  // along with anything nested inside.
+  return closed;
+}
+
+function collectClozeOrds(marker: ClozeMarker, ords: Set<number>): void {
+  for (const value of marker.values) {
+    if (value !== 0) ords.add(Math.min(value - 1, 499));
+  }
+  for (const child of marker.children) {
+    collectClozeOrds(child, ords);
+  }
+}
+
+/** Read the comma-separated number list of a cloze marker, up to its `::`. */
+function parseClozeNumbers(
+  field: string,
+  start: number,
+): { values: number[]; end: number } | undefined {
+  let cursor = start;
+  let digits = "";
+  while (cursor < field.length && (isAsciiDigit(field[cursor]) || field[cursor] === ",")) {
+    digits += field[cursor];
+    cursor++;
+  }
+  if (digits.length === 0 || !field.startsWith("::", cursor)) return undefined;
+
+  const values = digits
+    .split(",")
+    .filter((part) => part.length > 0)
+    .map(Number)
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 65535);
+
+  return values.length > 0 ? { values, end: cursor + 2 } : undefined;
+}
+
+function isAsciiDigit(char: string): boolean {
+  return char >= "0" && char <= "9";
+}
 
 /**
- * Anki's `field_is_empty`: a field counts as empty when its trimmed value is
- * only whitespace, `<br>`, `</br>`, `<div>`, `</div>`, or `<div />`. Anything
- * else (including `[sound:...]`, `<img ...>`, raw HTML with text inside) is
- * considered non-empty. See `rslib/src/template.rs` `field_is_empty`.
+ * Anki's `field_is_empty` (rslib/src/template.rs). `[[:space:]]` there is ASCII
+ * only, so a field of non-breaking spaces is NON-empty to Anki.
  */
 function fieldIsEmpty(text: string): boolean {
-  return /^(?:\s|<\/?(?:br|div)\s?\/?>)*$/i.test(text);
-}
-
-type ParsedNode =
-  | { kind: "text" }
-  | { kind: "replacement"; key: string }
-  | { kind: "section"; key: string; children: ParsedNode[] }
-  | { kind: "negated"; key: string; children: ParsedNode[] };
-
-/** Strip filter prefixes (e.g. `type:Definition` → `Definition`). */
-function replacementKey(raw: string): string {
-  const colon = raw.lastIndexOf(":");
-  return (colon >= 0 ? raw.slice(colon + 1) : raw).trim();
+  // `[[:space:]]` in Rust's regex crate is ASCII only, so a field holding a
+  // non-breaking or ideographic space is NOT empty to Anki.
+  return /^(?:[\t\n\v\f\r ]|<\/?(?:br|div) ?\/?>)*$/i.test(text);
 }
 
 /**
- * Parse a mustache template into the minimal AST needed for the empty-card
- * check. Bodies of text nodes are discarded since the caller only cares about
- * structure. Comments (`{{!...}}`) are dropped. Unbalanced or otherwise
- * malformed sections fall through as text, matching Anki's permissive
- * behaviour for templates that contain stray `{{` / `}}`.
+ * Anki's `SPECIAL_FIELDS` (rslib/src/notetype/mod.rs). All except `FrontSide`
+ * count as non-empty during card generation, unless a real field shadows the
+ * name; `Tags` counts only when the note is tagged.
  */
-function parseTemplate(src: string): ParsedNode[] {
-  const tokenRegex = /\{\{\s*([#^/!]?)\s*([^}]*?)\s*\}\}/g;
-  const root: ParsedNode[] = [];
-  const stack: { key: string; kind: "section" | "negated"; children: ParsedNode[] }[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+const SPECIAL_FIELDS = [
+  "FrontSide",
+  "Card",
+  "CardFlag",
+  "Deck",
+  "Subdeck",
+  "Tags",
+  "Type",
+  "CardID",
+];
 
-  const currentList = (): ParsedNode[] => (stack.length > 0 ? stack[stack.length - 1].children : root);
-
-  while ((match = tokenRegex.exec(src)) !== null) {
-    if (match.index > lastIndex) {
-      currentList().push({ kind: "text" });
-    }
-    const sigil = match[1];
-    const body = match[2];
-
-    if (sigil === "!") {
-      // comment, drop
-    } else if (sigil === "#" || sigil === "^") {
-      stack.push({ key: body.trim(), kind: sigil === "#" ? "section" : "negated", children: [] });
-    } else if (sigil === "/") {
-      const closing = body.trim();
-      const top = stack[stack.length - 1];
-      if (top && top.key === closing) {
-        stack.pop();
-        currentList().push({ kind: top.kind, key: top.key, children: top.children });
-      }
-      // Mismatched close: ignore. Anki's parser would raise; we degrade.
-    } else {
-      currentList().push({ kind: "replacement", key: replacementKey(body) });
-    }
-
-    lastIndex = tokenRegex.lastIndex;
-  }
-
-  if (lastIndex < src.length) {
-    currentList().push({ kind: "text" });
-  }
-
-  // Any sections still open at end of input: flush their accumulated children
-  // back as text so we don't silently lose them.
-  while (stack.length > 0) {
-    const frame = stack.pop()!;
-    currentList().push(...frame.children);
-  }
-
-  return root;
-}
-
-/**
- * Anki's `template_is_empty` (with `check_negated=true`, which is the value
- * `renders_with_fields` passes). Returns true when no Replacement reachable
- * through satisfied conditionals references a non-empty field.
- */
-function templateIsEmpty(nodes: ParsedNode[], nonempty: Set<string>): boolean {
-  for (const node of nodes) {
-    switch (node.kind) {
-      case "text":
-        continue;
-      case "replacement":
-        if (nonempty.has(node.key)) return false;
-        break;
-      case "section":
-        if (!nonempty.has(node.key)) continue;
-        if (!templateIsEmpty(node.children, nonempty)) return false;
-        break;
-      case "negated":
-        if (nonempty.has(node.key)) continue;
-        if (!templateIsEmpty(node.children, nonempty)) return false;
-        break;
-    }
-  }
-  return true;
-}
-
-/**
- * Check if a template should generate a card for the given note.
- *
- * Mirrors Anki's `ParsedTemplate::renders_with_fields`: build the set of
- * non-empty field names on the note, then walk the parsed template AST and
- * return true iff any reachable Replacement references a field in that set.
- */
-function templateHasContent(note: Note, templateOrd: number): boolean {
-  const tmpl = note.model.templates[templateOrd];
-  if (!tmpl) return false;
-
+/** The field names a template may treat as content, per Anki's card generator. */
+function nonemptyFieldNames(note: Note, fields: string[]): Set<string> {
+  const declared = new Set(note.model.fields.map((field) => field.name));
   const nonempty = new Set<string>();
-  for (let i = 0; i < note.model.fields.length; i++) {
-    if (!fieldIsEmpty(note.fields[i] ?? "")) {
-      nonempty.add(note.model.fields[i].name);
-    }
-  }
-  if (note.tags.length > 0) nonempty.add("Tags");
 
-  const parsed = parseTemplate(tmpl.questionFormat);
-  return !templateIsEmpty(parsed, nonempty);
+  note.model.fields.forEach((field, index) => {
+    if (!fieldIsEmpty(fields[index] ?? "")) nonempty.add(field.name);
+  });
+
+  for (const special of SPECIAL_FIELDS) {
+    if (special === "FrontSide" || declared.has(special)) continue;
+    if (special === "Tags" && note.tags.length === 0) continue;
+    nonempty.add(special);
+  }
+
+  return nonempty;
 }

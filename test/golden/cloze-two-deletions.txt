@@ -104,10 +104,11 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "css": ".card {\n  font-family: arial;\n  font-size: 20px;\n  text-align: center;\n  color: black;\n  background-color: white;\n}\n\n.cloze {\n  font-weight: bold;\n  color: blue;\n}",
+      "css": ".card {\n    font-family: arial;\n    font-size: 20px;\n    line-height: 1.5;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n.cloze {\n    font-weight: bold;\n    color: blue;\n}\n.nightMode .cloze {\n    color: lightblue;\n}\n",
       "kind": "KIND_CLOZE",
       "latexPost": "\\end{document}",
-      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}"
+      "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+      "originalStockKind": "ORIGINAL_STOCK_KIND_CLOZE"
     }
 
 == fields (2 rows) ==
@@ -117,7 +118,10 @@
     name: "Text"
     config: {
       "fontName": "Arial",
-      "fontSize": 20
+      "fontSize": 20,
+      "id": "8822520194613261913",
+      "preventDeletion": true,
+      "tag": 0
     }
   row 1
     ntid: nt#1
@@ -125,7 +129,9 @@
     name: "Back Extra"
     config: {
       "fontName": "Arial",
-      "fontSize": 20
+      "fontSize": 20,
+      "id": "7452776567173713932",
+      "tag": 1
     }
 
 == templates (1 row) ==
@@ -136,7 +142,8 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "aFormat": "{{cloze:Text}}\n\n<hr id=\"answer\">\n\n{{Back Extra}}",
+      "aFormat": "{{cloze:Text}}<br>\n{{Back Extra}}",
+      "id": "7629259238218742765",
       "qFormat": "{{cloze:Text}}"
     }
 

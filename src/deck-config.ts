@@ -10,6 +10,7 @@ import {
   DeckConfig_Config_LeechAction,
 } from "./generated/anki/deck_config_pb.js";
 import { IdGenerator } from "./util/id.js";
+import { rejectNul } from "./util/text.js";
 
 const idGen = new IdGenerator();
 
@@ -52,7 +53,7 @@ export type LeechAction = "suspend" | "tagOnly";
 export interface DeckConfigOptions {
   /** Custom config ID. Auto-generated if omitted. */
   id?: number;
-  /** Preset name as shown in Anki's deck options. @default "Default" */
+  /** Preset name as shown in Anki's deck options. @default "Preset <id>" */
   name?: string;
 
   // ── Learning ──────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ export interface DeckConfigOptions {
 
   // ── FSRS ──────────────────────────────────────────────────────────────
 
-  /** Target recall probability (0 to 1). FSRS tunes intervals to hit this. @default 0.9 */
+  /** Target recall probability (0.7 to 0.99). FSRS tunes intervals to hit this. @default 0.9 */
   desiredRetention?: number;
   /** Custom FSRS model weights. Leave empty to use Anki's defaults. @default [] */
   fsrsParams?: number[];
@@ -214,9 +215,6 @@ const LEECH_ACTION_MAP: Record<LeechAction, DeckConfig_Config_LeechAction> = {
  * Scheduler preset (deck options) that controls how Anki schedules cards.
  * Supports all FSRS settings. Each deck references exactly one config.
  *
- * Generated configs never use id=1, so importing will not overwrite
- * the user's existing default preset.
- *
  * @example
  * ```ts
  * const config = new DeckConfig({
@@ -235,9 +233,18 @@ export class DeckConfig {
   private readonly options: DeckConfigOptions;
 
   constructor(options: DeckConfigOptions = {}) {
+    validateDeckConfigOptions(options);
     this.id = options.id ?? idGen.next();
-    this.name = options.name ?? "Default";
-    this.options = options;
+    // Presets are deduped by id, not name, so a second "Default" would just
+    // appear alongside the user's own in their preset list.
+    this.name = options.name ?? `Preset ${this.id}`;
+    // Copied, because toProtobuf() reads these at build time and the caller
+    // could otherwise mutate past the validation above.
+    this.options = { ...options };
+    for (const key of ARRAY_OPTIONS) {
+      const value = options[key];
+      if (value !== undefined) this.options[key] = [...value];
+    }
   }
 
   toProtobuf(): DeckConfig_Config {
@@ -292,5 +299,107 @@ export class DeckConfig {
 
       paramSearch: "",
     });
+  }
+}
+
+// Anki re-reads every preset through `ensure_deck_config_values_valid` and
+// REPLACES an out-of-range value with its own default rather than clamping, so
+// shipping one silently discards what the author asked for.
+const VALID_RANGES: Array<[keyof DeckConfigOptions, number, number]> = [
+  ["newPerDay", 0, 9999],
+  ["reviewsPerDay", 0, 9999],
+  ["initialEase", 1.31, 5.0],
+  ["easyMultiplier", 1.0, 5.0],
+  ["hardMultiplier", 0.5, 1.3],
+  ["lapseMultiplier", 0.0, 1.0],
+  ["intervalMultiplier", 0.5, 2.0],
+  ["maximumReviewInterval", 1, 36500],
+  ["minimumLapseInterval", 1, 36500],
+  ["graduatingIntervalGood", 1, 36500],
+  ["graduatingIntervalEasy", 1, 36500],
+  ["leechThreshold", 1, 9999],
+  ["capAnswerTimeToSecs", 1, 9999],
+  ["desiredRetention", 0.7, 0.99],
+  ["historicalRetention", 0.7, 0.97],
+];
+
+/** Options Anki stores as u32, so a fraction fails to encode later. */
+const ARRAY_OPTIONS = [
+  "learnSteps",
+  "relearnSteps",
+  "fsrsParams",
+  "easyDaysPercentages",
+] as const satisfies ReadonlyArray<keyof DeckConfigOptions>;
+
+const INTEGER_OPTIONS: Array<keyof DeckConfigOptions> = [
+  "newPerDay",
+  "reviewsPerDay",
+  "maximumReviewInterval",
+  "minimumLapseInterval",
+  "graduatingIntervalGood",
+  "graduatingIntervalEasy",
+  "leechThreshold",
+  "capAnswerTimeToSecs",
+];
+
+function validateDeckConfigOptions(options: DeckConfigOptions): void {
+  if (options.id !== undefined && !Number.isSafeInteger(options.id)) {
+    throw new Error(`DeckConfig id must be a safe integer, got ${options.id}`);
+  }
+  if (options.name !== undefined) rejectNul(options.name, "DeckConfig name");
+
+  for (const key of INTEGER_OPTIONS) {
+    const value = options[key];
+    if (typeof value === "number" && !Number.isInteger(value)) {
+      throw new Error(`${String(key)} must be a whole number, got ${value}`);
+    }
+  }
+
+  for (const [key, min, max] of VALID_RANGES) {
+    const value = options[key];
+    // NaN has to be caught explicitly: it compares false against both bounds,
+    // and Anki's own check tests for it too.
+    if (typeof value === "number" && (!Number.isFinite(value) || value < min || value > max)) {
+      throw new Error(`${String(key)} must be between ${min} and ${max}, got ${value}`);
+    }
+  }
+
+  // Anki's load balancer parses every preset in the collection and errors on
+  // any other length, which stops the user studying any deck at all.
+  const easyDays = options.easyDaysPercentages;
+  if (easyDays !== undefined && easyDays.length !== 0 && easyDays.length !== 7) {
+    throw new Error(`easyDaysPercentages must have 0 or 7 entries, got ${easyDays.length}`);
+  }
+
+  // Anki validates parameters when a preset is saved from its own UI, but the
+  // apkg importer skips that check, so a bad vector surfaces on the first
+  // answered card instead.
+  const fsrs = options.fsrsParams;
+  // Anki reads `params[20]` as the FSRS-6 decay, so a shorter vector is
+  // silently downgraded to FSRS-5.
+  if (fsrs !== undefined && fsrs.length !== 0 && fsrs.length < 21) {
+    throw new Error(
+      `fsrsParams must be empty or hold at least 21 FSRS-6 values, got ${fsrs.length}`,
+    );
+  }
+
+  // A NaN or Infinity here encodes into the preset and reaches the scheduler,
+  // which the importer never revalidates.
+  for (const key of ARRAY_OPTIONS) {
+    for (const value of options[key] ?? []) {
+      if (!Number.isFinite(value)) {
+        throw new Error(`${key} must hold finite numbers, got ${value}`);
+      }
+    }
+  }
+
+  // Steps are delays in minutes. FSRS parameter bounds live in the fsrs crate
+  // rather than Anki, so those are left to Anki to judge.
+  for (const key of ["learnSteps", "relearnSteps"] as const) {
+    for (const value of options[key] ?? []) {
+      if (value < 0) {
+        throw new Error(`${key} must not hold negative delays, got ${value}`);
+      }
+    }
   }
 }

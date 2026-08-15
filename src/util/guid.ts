@@ -13,11 +13,13 @@ export function generateGuid(): string {
     num = (num << 8n) | BigInt(byte);
   }
 
+  // Digits come out least significant first, so reverse to match Anki's
+  // `to_base_n` (rslib/src/notes/mod.rs), which ends in `.rev()`.
   const chars: string[] = [];
   while (num > 0n) {
     chars.push(BASE91_ALPHABET[Number(num % 91n)]);
     num = num / 91n;
   }
 
-  return chars.join("");
+  return chars.reverse().join("");
 }

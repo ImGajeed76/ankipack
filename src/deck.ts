@@ -1,6 +1,7 @@
 import { DeckConfig } from "./deck-config.js";
 import type { Note } from "./note.js";
 import { IdGenerator } from "./util/id.js";
+import { toNormalizedDeckName } from "./util/text.js";
 
 const idGen = new IdGenerator();
 
@@ -26,6 +27,14 @@ export interface DeckOptions {
 }
 
 /**
+ * Returned by `getEffectiveConfig` for a deck created with `config: null`, so
+ * the package writer ships no deck_config row and points the deck at Anki's
+ * built-in default preset (id=1).
+ */
+export const NO_PRESET = "no-preset" as const;
+export type NoPreset = typeof NO_PRESET;
+
+/**
  * An Anki deck containing notes.
  *
  * @example
@@ -38,12 +47,6 @@ export interface DeckOptions {
  * deck.addNote(new Note({ model, fields: ["bonjour", "hello"] }));
  * ```
  */
-/** Sentinel returned by `getEffectiveConfig` when the deck was created with
- *  `config: null`. The package writer reads this to skip the deck_config
- *  row entirely and reference Anki's built-in default preset (id=1). */
-export const NO_PRESET = "no-preset" as const;
-export type NoPreset = typeof NO_PRESET;
-
 export class Deck {
   readonly id: number;
   readonly name: string;
@@ -53,6 +56,9 @@ export class Deck {
   private _effectiveConfig?: DeckConfig;
 
   constructor(options: DeckOptions) {
+    if (options.id !== undefined && !Number.isSafeInteger(options.id)) {
+      throw new Error(`Deck id must be a safe integer, got ${options.id}`);
+    }
     this.id = options.id ?? idGen.next();
     this.name = options.name;
     this.description = options.description;
@@ -67,15 +73,16 @@ export class Deck {
   /**
    * Returns the deck's config, the {@link NO_PRESET} sentinel when the deck
    * was created with `config: null`, or a unique auto-generated config when
-   * `config` was omitted. Never returns a config with id=1: shipping that
-   * would overwrite the user's existing default preset on import.
+   * `config` was omitted.
    */
   getEffectiveConfig(): DeckConfig | NoPreset {
     if (this.config === null) return NO_PRESET;
     if (this.config) return this.config;
     if (!this._effectiveConfig) {
+      // Named after the deck as Anki will display it, not as it was passed in:
+      // the raw name can hold characters the deck name itself drops.
       this._effectiveConfig = new DeckConfig({
-        name: `${this.name} Config`,
+        name: `${toNormalizedDeckName(this.name)} Config`,
       });
     }
     return this._effectiveConfig;
