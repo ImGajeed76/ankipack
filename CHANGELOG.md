@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
-Audited every table ankipack writes against Anki 26.08.1's source.
+Audited every table ankipack writes against Anki 26.08.1's source. The
+generated package was imported into Anki 26.08.1 to confirm the results,
+including subdeck nesting, cloze generation, media, deck presets, and the
+card an alt-syntax template now produces.
 
 Breaking
 
