@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Types, lint, format, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run check
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun test ./test
+
+      # `prepublishOnly` builds too, so this covers what a release will run.
+      - run: bun run build
+
+  generated:
+    name: Generated code is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+
+      # `src/generated/` is committed and never hand-edited, so a drift from
+      # `proto/` stays invisible until someone regenerates months later.
+      - run: bun run generate
+      - name: Generated code matches proto/
+        run: git diff --exit-code src/generated/
+
+  e2e:
+    name: Real Anki accepts what ankipack writes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: bun install --frozen-lockfile
+
+      # pip's cache, not `e2e/.venv`: `setup.sh` only creates the venv when it
+      # is absent, so a cached one survives a runner Python bump and then fails
+      # on a dangling interpreter.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('e2e/requirements.txt') }}
+
+      - run: bun run e2e:setup
+      - run: bun run test:e2e
