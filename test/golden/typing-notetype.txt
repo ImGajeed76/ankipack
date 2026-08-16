@@ -1,4 +1,4 @@
-# Golden section dump of an apkg's collection.anki2.
+# Golden section dump of an apkg's collection.anki21b.
 #
 # Clock-derived values are symbolised: deck#1 / nt#1 / note#1 / card#1 /
 # dconf#1 for generated ids, dconf:1 for meaningful constants, time#1 for
@@ -55,7 +55,7 @@
 == deck_config (1 row) ==
   row 0
     id: dconf#1
-    name: "Languages::French::Chapter 1 Config"
+    name: "Typing Config"
     mtime_secs: time#1
     usn: -1
     config: {
@@ -87,81 +87,69 @@
 == decks (1 row) ==
   row 0
     id: deck#1
-    name: "Languages\u001fFrench\u001fChapter 1"
+    name: "Typing"
     mtime_secs: time#1
     usn: -1
     common: {}
     kind: {
       "normal": {
-        "configId": "dconf#1",
-        "description": "Chapter 1 vocabulary"
+        "configId": "dconf#1"
       }
     }
 
 == notetypes (1 row) ==
   row 0
     id: nt#1
-    name: "Vocab (FR to DE)"
+    name: "Basic (type in the answer)"
     mtime_secs: time#1
     usn: -1
     config: {
       "css": ".card {\n    font-family: arial;\n    font-size: 20px;\n    line-height: 1.5;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n",
       "latexPost": "\\end{document}",
       "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+      "originalStockKind": "ORIGINAL_STOCK_KIND_BASIC_TYPING",
       "reqs": [
         {
           "fieldOrds": [
-            0
+            0,
+            1
           ],
           "kind": "KIND_ANY"
         }
-      ],
-      "sortFieldIdx": 1
+      ]
     }
 
-== fields (3 rows) ==
+== fields (2 rows) ==
   row 0
     ntid: nt#1
     ord: 0
-    name: "French"
+    name: "Front"
     config: {
       "fontName": "Arial",
-      "fontSize": 24,
-      "id": "2321458954647879293"
+      "fontSize": 20,
+      "id": "6724029326726867425"
     }
   row 1
     ntid: nt#1
     ord: 1
-    name: "German"
-    config: {
-      "description": "Zielsprache",
-      "fontName": "Arial",
-      "fontSize": 20,
-      "id": "860696317379480040",
-      "sticky": true
-    }
-  row 2
-    ntid: nt#1
-    ord: 2
-    name: "Note"
+    name: "Back"
     config: {
       "fontName": "Arial",
       "fontSize": 20,
-      "id": "4363492701134711343",
-      "plainText": true
+      "id": "4373180076799034402"
     }
 
 == templates (1 row) ==
   row 0
     ntid: nt#1
     ord: 0
-    name: "Recognition"
+    name: "Card 1"
     mtime_secs: time#1
     usn: -1
     config: {
-      "aFormat": "{{FrontSide}}<hr id=\"answer\">{{German}}{{#Note}}<br>{{Note}}{{/Note}}",
-      "id": "772339967667023020",
-      "qFormat": "{{French}}"
+      "aFormat": "{{Front}}\n\n<hr id=answer>\n\n{{type:Back}}",
+      "id": "2232687928315105017",
+      "qFormat": "{{Front}}\n\n{{type:Back}}"
     }
 
 == notes (1 row) ==
@@ -172,9 +160,9 @@
     mod: time#1
     usn: -1
     tags: ""
-    flds: "chien\u001fHund\u001f"
-    sfld: "Hund"
-    csum: 3143153216
+    flds: "spell: bicycle\u001fbicycle"
+    sfld: "spell: bicycle"
+    csum: 219051562
     flags: 0
     data: ""
 

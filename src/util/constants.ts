@@ -26,7 +26,7 @@ export const DEFAULT_CLOZE_CSS = `.cloze {
 }
 `;
 
-/** Default LaTeX preamble */
+/** Anki's `DEFAULT_LATEX_HEADER` (rslib/src/notetype/header.tex), copied byte for byte. */
 export const DEFAULT_LATEX_PRE = `\\documentclass[12pt]{article}
 \\special{papersize=3in,5in}
 \\usepackage[utf8]{inputenc}
@@ -36,5 +36,5 @@ export const DEFAULT_LATEX_PRE = `\\documentclass[12pt]{article}
 \\begin{document}
 `;
 
-/** Default LaTeX postamble */
+/** Anki's `DEFAULT_LATEX_FOOTER`. */
 export const DEFAULT_LATEX_POST = "\\end{document}";

@@ -1,7 +1,7 @@
 {
   "name": "ankipack",
   "version": "0.2.0",
-  "description": "Generate Anki .apkg decks with full FSRS support. Works in browsers, Node.js, and Bun.",
+  "description": "Generate, read and edit Anki .apkg decks with full FSRS support. Works in browsers, Node.js, and Bun.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,17 +12,20 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "bun test ./test",
-    "check": "tsc --noEmit",
-    "lint": "bunx eslint src/",
-    "format": "bunx prettier --write src/",
-    "format:check": "bunx prettier --check src/",
+    "build": "rm -rf dist && tsc --sourceMap false --declarationMap false",
+    "check": "tsc -p tsconfig.check.json",
+    "e2e:setup": "./e2e/setup.sh",
+    "format": "bunx prettier --write src/ test/ e2e/",
+    "format:check": "bunx prettier --check src/ test/ e2e/",
     "generate": "bunx buf generate",
-    "prepublishOnly": "bun run build && bun run test"
+    "lint": "bunx eslint src/ test/ e2e/",
+    "prepublishOnly": "bun run check && bun run lint && bun run format:check && bun run build && bun run test",
+    "test": "bun test ./test",
+    "test:e2e": "bun test ./e2e"
   },
   "keywords": [
     "anki",
@@ -31,6 +34,7 @@
     "spaced-repetition",
     "fsrs",
     "deck-generator",
+    "apkg-reader",
     "anki-deck",
     "srs"
   ],
@@ -46,8 +50,8 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.11.0",
-    "sql.js": "^1.12.0",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "fzstd": "^0.1.1"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.50.0",
@@ -58,7 +62,16 @@
     "eslint": "^10.2.0",
     "globals": "^17.5.0",
     "prettier": "^3.8.3",
+    "sql.js": "^1.12.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.58.2"
+  },
+  "peerDependencies": {
+    "sql.js": "^1.12.0"
+  },
+  "peerDependenciesMeta": {
+    "sql.js": {
+      "optional": true
+    }
   }
 }

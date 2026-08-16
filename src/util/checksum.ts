@@ -1,12 +1,12 @@
-/**
- * Compute the checksum for a note's first field.
- * Uses SHA-1, takes the first 4 bytes as a big-endian unsigned 32-bit integer.
- * This matches Anki's `fieldChecksum` implementation.
- */
+/** SHA-1 of arbitrary bytes, which is what Anki records for each media entry. */
+export async function sha1(data: Uint8Array): Promise<Uint8Array> {
+  // Copied rather than passed by reference: the view may sit on a shared or
+  // oversized buffer, and digest() would hash the whole thing.
+  return new Uint8Array(await crypto.subtle.digest("SHA-1", Uint8Array.from(data)));
+}
+
+/** Anki's `field_checksum` (rslib/src/notes/mod.rs): the first four SHA-1 bytes. */
 export async function fieldChecksum(firstField: string): Promise<number> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(firstField);
-  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-  const view = new DataView(hashBuffer);
-  return view.getUint32(0, false); // big-endian
+  const digest = await sha1(new TextEncoder().encode(firstField));
+  return new DataView(digest.buffer).getUint32(0, false); // big-endian
 }

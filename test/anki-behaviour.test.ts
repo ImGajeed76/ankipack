@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { Package, Deck, DeckConfig, Model, Note } from "../src/index";
+import { Package, Deck, DeckConfig, Notetype, Note } from "../src/index";
 import { fromBinary } from "@bufbuild/protobuf";
 import {
   Notetype_ConfigSchema,
@@ -19,9 +19,13 @@ const NBSP = String.fromCharCode(0x00a0);
 const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
 const NUL = String.fromCharCode(0);
 
-async function cardOrds(model: Model, fields: string[], tags: string[] = []): Promise<number[]> {
+async function cardOrds(
+  notetype: Notetype,
+  fields: string[],
+  tags: string[] = [],
+): Promise<number[]> {
   const deck = new Deck({ name: "T" });
-  deck.addNote(new Note({ model, fields, tags }));
+  deck.addNote(new Note({ notetype, fields, tags }));
   const pkg = new Package();
   pkg.addDeck(deck);
   const opened = await openPackage(pkg);
@@ -32,13 +36,13 @@ async function cardOrds(model: Model, fields: string[], tags: string[] = []): Pr
   }
 }
 
-// A single-template model cannot test card generation, because Anki's
+// A single-template note type cannot test card generation, because Anki's
 // ensure_not_empty fallback forces card 0 when nothing renders, so "renders"
 // and "does not render" both produce [0]. Every case below therefore ships a
 // control template at ord 0 that always renders, with the case under test at
 // ord 1. Result [0, 1] means it rendered; [0] means it did not.
-function withControl(questionFormat: string): Model {
-  return new Model({
+function withControl(questionFormat: string): Notetype {
+  return new Notetype({
     name: `M:${questionFormat}`,
     fields: [{ name: "Control" }, { name: "Front" }, { name: "Back" }],
     templates: [
@@ -62,62 +66,64 @@ describe("cloze ordinals", () => {
   // rslib/src/card/mod.rs:80 `template_idx: u16` -> a -1 ord fails to decode and
   // aborts the whole import during the gather pass.
   test(`c0 is discarded, never written as ord -1 (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c0::x}}", ""])).toEqual([0]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c0::x}}", ""])).toEqual([0]);
   });
 
   test(`c0 alongside c2 leaves only the c2 card (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c0::a}} {{c2::b}}", ""])).toEqual([1]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c0::a}} {{c2::b}}", ""])).toEqual([1]);
   });
 
   // rslib/src/cloze.rs tokenize: take_while(is_ascii_digit || ','), then split(',')
   test(`comma-separated ordinals generate one card each (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c1,2,3::multi}}", ""])).toEqual([0, 1, 2]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c1,2,3::multi}}", ""])).toEqual([0, 1, 2]);
   });
 
   // The nastiest variant: a plain c1 matches, so nothing looks wrong, but the
   // c3 card is silently missing.
   test(`a comma list mixed with a plain marker keeps both (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c1::a}} {{c1,3::b}}", ""])).toEqual([0, 2]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c1::a}} {{c1,3::b}}", ""])).toEqual([0, 2]);
   });
 
   // rslib/src/notetype/cardgen.rs:169 `cloze_ord.saturating_sub(1).min(499)`.
   // The resulting card renders "No cloze 500 found": Anki clamps the ordinal
   // without rewriting the note text, and does the same for its own notes.
-  test(`ordinals are clamped to 499 (${ANKI} cardgen.rs:169)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c600::x}}", ""])).toEqual([499]);
+  test(`ordinals are clamped to 499 (${ANKI} cardgen.rs new_cards_required_cloze)`, async () => {
+    expect(await cardOrds(Notetype.cloze(), ["{{c600::x}}", ""])).toEqual([499]);
   });
 
   // Above u16 the marker fails to parse in Anki, so it is not a cloze at all
   // and the note falls back to a single card at ord 0.
   test(`an ordinal beyond u16 is not treated as a cloze (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c999999::x}}", ""])).toEqual([0]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c999999::x}}", ""])).toEqual([0]);
   });
 
   // rslib/src/cloze.rs: a closed marker is pushed into its parent's nodes, and
   // ordinals are collected only from what is reachable at the top level, so an
   // unclosed outer marker discards everything nested inside it.
   test(`an unclosed outer marker discards its children (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c1::Berlin is in {{c2::Germany}}", ""])).toEqual([0]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c1::Berlin is in {{c2::Germany}}", ""])).toEqual([
+      0,
+    ]);
   });
 
   test(`a closed nested marker keeps both ordinals (${ANKI} cloze.rs)`, async () => {
-    expect(await cardOrds(Model.cloze(), ["{{c1::outer {{c2::inner}}}}", ""])).toEqual([0, 1]);
+    expect(await cardOrds(Notetype.cloze(), ["{{c1::outer {{c2::inner}}}}", ""])).toEqual([0, 1]);
   });
 
   // rslib/src/cloze.rs `if open_clozes.len() < 10`
   test(`nesting is tracked only 10 deep (${ANKI} cloze.rs)`, async () => {
     let text = "x";
     for (let n = 12; n >= 1; n--) text = `{{c${n}::${text}}}`;
-    expect(await cardOrds(Model.cloze(), [text, ""])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(await cardOrds(Notetype.cloze(), [text, ""])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 });
 
 describe("card generation", () => {
   // rslib/src/notetype/cardgen.rs:107 ensure_not_empty forces ord 0 so a note
   // always has at least one card. Without it the note is invisible in Anki.
-  test(`a note whose templates all render empty still gets card 0 (${ANKI} cardgen.rs:107)`, async () => {
+  test(`a note whose templates all render empty still gets card 0 (${ANKI} cardgen.rs ensure_not_empty)`, async () => {
     const deck = new Deck({ name: "Orphans" });
-    deck.addNote(new Note({ model: Model.basicAndReversed(), fields: ["", ""] }));
+    deck.addNote(new Note({ notetype: Notetype.basicAndReversed(), fields: ["", ""] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -145,7 +151,7 @@ describe("card generation", () => {
   // rslib/src/notetype/mod.rs:71 SPECIAL_FIELDS, seeded non-empty by
   // rslib/src/notetype/cardgen.rs (all except FrontSide, and Tags only if tagged)
   for (const special of ["Deck", "Subdeck", "Type", "Card", "CardFlag", "CardID"]) {
-    test(`{{${special}}} counts as content (${ANKI} notetype/mod.rs:71)`, async () => {
+    test(`{{${special}}} counts as content (${ANKI} notetype/mod.rs SPECIAL_FIELDS)`, async () => {
       expect(await subjectOrds(`{{${special}}}`, "", "")).toEqual([0, 1]);
     });
   }
@@ -227,7 +233,7 @@ describe("deck names", () => {
   // ver=18 so that upgrade never runs (rslib/src/storage/sqlite.rs:506).
   async function storedDeckName(name: string): Promise<string> {
     const deck = new Deck({ name });
-    deck.addNote(new Note({ model: Model.basic(), fields: ["a", "b"] }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["a", "b"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -258,11 +264,11 @@ describe("deck names", () => {
   });
 
   test("two decks with the same name fail with an actionable error, not raw SQLite", async () => {
-    const model = Model.basic();
+    const notetype = Notetype.basic();
     const a = new Deck({ name: "Same" });
     const b = new Deck({ name: "Same" });
-    a.addNote(new Note({ model, fields: ["a", "b"] }));
-    b.addNote(new Note({ model, fields: ["c", "d"] }));
+    a.addNote(new Note({ notetype, fields: ["a", "b"] }));
+    b.addNote(new Note({ notetype, fields: ["c", "d"] }));
     const pkg = new Package();
     pkg.addDeck(a);
     pkg.addDeck(b);
@@ -275,7 +281,7 @@ describe("field content sanitisation", () => {
   // \t are stripped before Anki ever writes a note.
   async function storedFlds(fields: string[]): Promise<string> {
     const deck = new Deck({ name: "F" });
-    deck.addNote(new Note({ model: Model.basic(), fields }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -301,25 +307,25 @@ describe("field content sanitisation", () => {
   // rslib/src/tags/mod.rs is_tag_separator: ' ' and U+3000 split tags.
   test("a tag containing a space is rejected rather than silently split", () => {
     expect(
-      () => new Note({ model: Model.basic(), fields: ["a", "b"], tags: ["two words"] }),
+      () => new Note({ notetype: Notetype.basic(), fields: ["a", "b"], tags: ["two words"] }),
     ).toThrow();
   });
 });
 
-describe("model validation", () => {
+describe("note type validation", () => {
   // rslib/src/notetype/mod.rs:484 require!(!self.fields.is_empty(), "1 field required")
-  test("a model with no fields is rejected at construction", () => {
-    expect(() => new Model({ name: "Empty", fields: [], templates: [] })).toThrow();
+  test("a note type with no fields is rejected at construction", () => {
+    expect(() => new Notetype({ name: "Empty", fields: [], templates: [] })).toThrow();
   });
 
-  test("a model with no templates is rejected at construction", () => {
-    expect(() => new Model({ name: "NoTpl", fields: [{ name: "F" }], templates: [] })).toThrow();
+  test("a note type with no templates is rejected at construction", () => {
+    expect(() => new Notetype({ name: "NoTpl", fields: [{ name: "F" }], templates: [] })).toThrow();
   });
 
   test("an empty notetype name is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "",
           fields: [{ name: "F" }],
           templates: [{ name: "C", questionFormat: "{{F}}", answerFormat: "{{F}}" }],
@@ -328,11 +334,11 @@ describe("model validation", () => {
   });
 
   // rslib/src/notetype/fields.rs fix_name strips : { } " and leading # / ^,
-  // which desynchronises the field name from the {{Field}} refs we shipped.
+  // which desynchronises the field name from the {{Field}} refs shipped with it.
   test("a field name containing a colon is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "Colon",
           fields: [{ name: "Front: Text" }],
           templates: [{ name: "C", questionFormat: "{{Front: Text}}", answerFormat: "x" }],
@@ -345,7 +351,7 @@ describe("model validation", () => {
   test("a field name with trailing whitespace is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "Trailing",
           fields: [{ name: "Front " }],
           templates: [{ name: "C", questionFormat: "{{Front}}", answerFormat: "x" }],
@@ -355,10 +361,10 @@ describe("model validation", () => {
 
   // Anki strips quotes then requires the remainder to be non-empty, for both
   // notetype names (mod.rs) and template names (templates.rs).
-  test("a model name of only quotes is rejected", () => {
+  test("a note type name of only quotes is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: '""',
           fields: [{ name: "F" }],
           templates: [{ name: "C", questionFormat: "{{F}}", answerFormat: "x" }],
@@ -369,7 +375,7 @@ describe("model validation", () => {
   test("a template name of only quotes is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "QuoteTpl",
           fields: [{ name: "F" }],
           templates: [{ name: '""', questionFormat: "{{F}}", answerFormat: "x" }],
@@ -381,7 +387,7 @@ describe("model validation", () => {
   test("duplicate template names are rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "DupTpl",
           fields: [{ name: "F" }],
           templates: [
@@ -397,7 +403,7 @@ describe("model validation", () => {
   test("an out-of-range sortFieldIndex is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "SortIdx",
           sortFieldIndex: 5,
           fields: [{ name: "A" }, { name: "B" }],
@@ -407,10 +413,10 @@ describe("model validation", () => {
   });
 
   // Beyond 2^53 a JS number cannot hold the id, so it would be written altered.
-  test("a Model id beyond the safe integer range is rejected", () => {
+  test("a Notetype id beyond the safe integer range is rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "BigId",
           id: 2 ** 53 + 1,
           fields: [{ name: "A" }],
@@ -423,7 +429,7 @@ describe("model validation", () => {
   test("case-only duplicate field names are rejected", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           name: "CaseDupe",
           fields: [{ name: "Front" }, { name: "front" }],
           templates: [{ name: "C", questionFormat: "{{Front}}", answerFormat: "x" }],
@@ -449,7 +455,7 @@ describe("media", () => {
   test(`filenames differing only by NFC/NFD collide (${ANKI} media/files.rs)`, () => {
     const pkg = new Package();
     const composed = "café.png";
-    const decomposed = composed.normalize("NFD"); // decomposed form of "café.png";
+    const decomposed = composed.normalize("NFD");
     expect(composed).not.toBe(decomposed);
     pkg.addMedia(composed, new Uint8Array([1]));
     expect(() => pkg.addMedia(decomposed, new Uint8Array([2]))).toThrow();
@@ -459,11 +465,11 @@ describe("media", () => {
 describe("note identity", () => {
   // rslib/src/notes/mod.rs:206 both csum and sfld are computed from
   // strip_html_preserving_media_filenames(field), not the raw field.
-  test(`csum ignores HTML markup (${ANKI} notes/mod.rs:206)`, async () => {
-    const model = Model.basic();
+  test(`csum ignores HTML markup (${ANKI} notes/mod.rs prepare_for_update)`, async () => {
+    const notetype = Notetype.basic();
     const deck = new Deck({ name: "C" });
-    deck.addNote(new Note({ model, fields: ["<b>test</b>", "x"] }));
-    deck.addNote(new Note({ model, fields: ["test", "y"] }));
+    deck.addNote(new Note({ notetype, fields: ["<b>test</b>", "x"] }));
+    deck.addNote(new Note({ notetype, fields: ["test", "y"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -515,9 +521,9 @@ describe("note identity", () => {
     expect(stripHtmlPreservingMediaFilenames(`a${nbsp}b`)).toBe(`a${nbsp}b`);
   });
 
-  test(`sfld has HTML stripped (${ANKI} notes/mod.rs:206)`, async () => {
+  test(`sfld has HTML stripped (${ANKI} notes/mod.rs prepare_for_update)`, async () => {
     const deck = new Deck({ name: "S" });
-    deck.addNote(new Note({ model: Model.basic(), fields: ["<b>bold</b>", "x"] }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["<b>bold</b>", "x"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -535,13 +541,13 @@ describe("notetype config", () => {
   // renders, giving All; otherwise None.
   // KIND_NONE = 0, KIND_ANY = 1, KIND_ALL = 2 (proto/anki/notetypes.proto).
   async function reqsOf(questionFormat: string): Promise<{ kind: number; fieldOrds: number[] }> {
-    const model = new Model({
+    const notetype = new Notetype({
       name: `R:${questionFormat}`,
       fields: [{ name: "a" }, { name: "b" }, { name: "c" }],
       templates: [{ name: "C", questionFormat, answerFormat: "x" }],
     });
     const deck = new Deck({ name: "R" });
-    deck.addNote(new Note({ model, fields: ["1", "2", "3"] }));
+    deck.addNote(new Note({ notetype, fields: ["1", "2", "3"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -584,8 +590,8 @@ describe("notetype config", () => {
   }
 
   // rslib/src/notetype/cloze_styling.css ships a night-mode rule too.
-  test(`Model.cloze() CSS includes the night-mode rule (${ANKI} cloze_styling.css)`, () => {
-    expect(Model.cloze().css).toContain(".nightMode .cloze");
+  test(`Notetype.cloze() CSS includes the night-mode rule (${ANKI} cloze_styling.css)`, () => {
+    expect(Notetype.cloze().css).toContain(".nightMode .cloze");
   });
 });
 
@@ -632,11 +638,11 @@ describe("deck config validation", () => {
   // Only one row per id can ship, so the second preset's settings would be
   // silently replaced by the first's.
   test("two DeckConfigs sharing an id are rejected", async () => {
-    const model = Model.basic();
+    const notetype = Notetype.basic();
     const a = new Deck({ name: "A", config: new DeckConfig({ id: 777, name: "Cram" }) });
     const b = new Deck({ name: "B", config: new DeckConfig({ id: 777, name: "Relax" }) });
-    a.addNote(new Note({ model, fields: ["a", "b"] }));
-    b.addNote(new Note({ model, fields: ["c", "d"] }));
+    a.addNote(new Note({ notetype, fields: ["a", "b"] }));
+    b.addNote(new Note({ notetype, fields: ["c", "d"] }));
     const pkg = new Package();
     pkg.addDeck(a);
     pkg.addDeck(b);
@@ -653,13 +659,13 @@ describe("public API", () => {
   // Anki reassigns deck ids on import and never remaps target_deck_id, so any
   // value shipped here would dangle.
   test("no template ships a target_deck_id that would dangle after import", async () => {
-    const model = new Model({
+    const notetype = new Notetype({
       name: "Target",
       fields: [{ name: "F" }],
       templates: [{ name: "C", questionFormat: "{{F}}", answerFormat: "{{F}}" }],
     });
     const deck = new Deck({ name: "Home" });
-    deck.addNote(new Note({ model, fields: ["x"] }));
+    deck.addNote(new Note({ notetype, fields: ["x"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -721,8 +727,7 @@ describe(`entity decoding matches htmlescape 0.3.1 (${ANKI})`, () => {
 
 // Anki's regex crate is a DFA, so its HTML_MEDIA_TAGS pattern is linear no
 // matter how ambiguous. A backtracking engine is not: the unnarrowed pattern
-// took 29 seconds on a 136-character field, and the two calls per note are on
-// the path of every build.
+// and the two strip calls per note are on the path of every build.
 test(`stripping a field with many quoted runs stays fast (${ANKI})`, () => {
   const field = '<img alt="pic"> ' + '"hi" '.repeat(400);
   const started = performance.now();
@@ -777,7 +782,7 @@ describe(`legacy alt-handlebar syntax (${ANKI})`, () => {
 
   // The whole point: this changes which cards the user gets.
   test("a card is generated for an alt-syntax template", async () => {
-    const model = new Model({
+    const notetype = new Notetype({
       name: "Alt",
       fields: [{ name: "Front" }, { name: "Back" }],
       templates: [
@@ -785,7 +790,7 @@ describe(`legacy alt-handlebar syntax (${ANKI})`, () => {
         { name: "C2", questionFormat: "{{=<% %>=}}<%Front%>", answerFormat: "x" },
       ],
     });
-    expect(await cardOrds(model, ["a", ""])).toEqual([1]);
+    expect(await cardOrds(notetype, ["a", ""])).toEqual([1]);
   });
 });
 
@@ -796,18 +801,18 @@ describe("a NUL is refused rather than silently truncating", () => {
     fields: [{ name: "F" }],
     templates: [{ name: "C", questionFormat: "{{F}}", answerFormat: "x" }],
   };
-  test("model name", () => {
-    expect(() => new Model({ ...base, name: `Note${NUL}Type` })).toThrow(/NUL/);
+  test("note type name", () => {
+    expect(() => new Notetype({ ...base, name: `Note${NUL}Type` })).toThrow(/NUL/);
   });
   test("field name", () => {
-    expect(() => new Model({ ...base, name: "M", fields: [{ name: `Fr${NUL}ont` }] })).toThrow(
+    expect(() => new Notetype({ ...base, name: "M", fields: [{ name: `Fr${NUL}ont` }] })).toThrow(
       /NUL/,
     );
   });
   test("template name", () => {
     expect(
       () =>
-        new Model({
+        new Notetype({
           ...base,
           name: "M",
           templates: [{ name: `Ca${NUL}rd`, questionFormat: "{{F}}", answerFormat: "x" }],
@@ -816,7 +821,7 @@ describe("a NUL is refused rather than silently truncating", () => {
   });
   test("note guid", () => {
     expect(
-      () => new Note({ model: Model.basic(), fields: ["a", "b"], guid: `gu${NUL}id` }),
+      () => new Note({ notetype: Notetype.basic(), fields: ["a", "b"], guid: `gu${NUL}id` }),
     ).toThrow(/NUL/);
   });
   test("deck config name", () => {
@@ -827,7 +832,7 @@ describe("a NUL is refused rather than silently truncating", () => {
   // " tag1 tag2 " format Anki parses. rslib/src/tags/register.rs:154.
   test("tag", () => {
     expect(
-      () => new Note({ model: Model.basic(), fields: ["a", "b"], tags: [`chap${NUL}ter`] }),
+      () => new Note({ notetype: Notetype.basic(), fields: ["a", "b"], tags: [`chap${NUL}ter`] }),
     ).toThrow(/control character/);
   });
 
@@ -835,7 +840,7 @@ describe("a NUL is refused rather than silently truncating", () => {
   // strips control characters, so ankipack strips them too.
   test("deck names strip it instead, as Anki does", async () => {
     const deck = new Deck({ name: `De${NUL}ck` });
-    deck.addNote(new Note({ model: Model.basic(), fields: ["a", "b"] }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["a", "b"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -848,57 +853,57 @@ describe("a NUL is refused rather than silently truncating", () => {
 });
 
 // Both columns are UNIQUE in the schema, so a collision otherwise surfaces as
-// a raw SQLite error, or for a repeated model id as a silently dropped
+// a raw SQLite error, or for a repeated note type id as a silently dropped
 // notetype whose notes then carry the wrong field count.
 describe("colliding ids and names are refused with a usable message", () => {
-  const modelWith = (id: number | undefined, name: string, fieldNames: string[]) =>
-    new Model({
+  const notetypeWith = (id: number | undefined, name: string, fieldNames: string[]) =>
+    new Notetype({
       id,
       name,
       fields: fieldNames.map((n) => ({ name: n })),
       templates: [{ name: "C", questionFormat: `{{${fieldNames[0]}}}`, answerFormat: "x" }],
     });
 
-  test("two different Models sharing an id", async () => {
+  test("two different Notetypes sharing an id", async () => {
     const deck = new Deck({ name: "D" });
     deck.addNote(
-      new Note({ model: modelWith(4242, "Alpha", ["Front", "Back"]), fields: ["a", "b"] }),
+      new Note({ notetype: notetypeWith(4242, "Alpha", ["Front", "Back"]), fields: ["a", "b"] }),
     );
     deck.addNote(
-      new Note({ model: modelWith(4242, "Beta", ["Q", "A", "X"]), fields: ["c", "d", "e"] }),
+      new Note({ notetype: notetypeWith(4242, "Beta", ["Q", "A", "X"]), fields: ["c", "d", "e"] }),
     );
     const pkg = new Package();
     pkg.addDeck(deck);
     await expect(openPackage(pkg)).rejects.toThrow(/share id 4242.*Alpha.*Beta/s);
   });
 
-  test("two different Models sharing a name", async () => {
+  test("two different Notetypes sharing a name", async () => {
     const deck = new Deck({ name: "D" });
-    deck.addNote(new Note({ model: modelWith(undefined, "Dup", ["F"]), fields: ["a"] }));
-    deck.addNote(new Note({ model: modelWith(undefined, "Dup", ["G"]), fields: ["b"] }));
+    deck.addNote(new Note({ notetype: notetypeWith(undefined, "Dup", ["F"]), fields: ["a"] }));
+    deck.addNote(new Note({ notetype: notetypeWith(undefined, "Dup", ["G"]), fields: ["b"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     await expect(openPackage(pkg)).rejects.toThrow(/both named "Dup"/);
   });
 
   test("two Decks sharing an id", async () => {
-    const model = Model.basic();
+    const notetype = Notetype.basic();
     const first = new Deck({ id: 999, name: "One" });
     const second = new Deck({ id: 999, name: "Two" });
-    first.addNote(new Note({ model, fields: ["a", "b"] }));
-    second.addNote(new Note({ model, fields: ["c", "d"] }));
+    first.addNote(new Note({ notetype, fields: ["a", "b"] }));
+    second.addNote(new Note({ notetype, fields: ["c", "d"] }));
     const pkg = new Package();
     pkg.addDeck(first);
     pkg.addDeck(second);
     await expect(openPackage(pkg)).rejects.toThrow(/share id 999/);
   });
 
-  // Reusing one Model instance is the ordinary case and must stay allowed.
-  test("one Model shared across notes is not a collision", async () => {
-    const model = Model.basic();
+  // Reusing one Notetype instance is the ordinary case and must stay allowed.
+  test("one Notetype shared across notes is not a collision", async () => {
+    const notetype = Notetype.basic();
     const deck = new Deck({ name: "D" });
-    deck.addNote(new Note({ model, fields: ["a", "b"] }));
-    deck.addNote(new Note({ model, fields: ["c", "d"] }));
+    deck.addNote(new Note({ notetype, fields: ["a", "b"] }));
+    deck.addNote(new Note({ notetype, fields: ["c", "d"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -960,8 +965,8 @@ describe(`media tag regex matches the regex crate (${ANKI})`, () => {
     expect(stripHtmlPreservingMediaFilenames("<audio src= a.mp3>")).toBe("  a.mp3 ");
   });
 
-  // Rust's \b is Unicode-aware; JavaScript's is ASCII, so these used to match
-  // and preserve the filename. A tag the media pass leaves alone is then
+  // Rust's \b is Unicode-aware and JavaScript's is ASCII, so a literal
+  // transcription matches these where Anki does not. A tag the media pass leaves alone is then
   // removed wholesale by the HTML pass, so "" means "was not a media tag".
   test("a non-ASCII letter around the tag name blocks the match", () => {
     expect(stripHtmlPreservingMediaFilenames("<imgé src=a.jpg>")).toBe("");
@@ -980,26 +985,26 @@ describe(`media tag regex matches the regex crate (${ANKI})`, () => {
 // and then require the name to be non-empty. A name that merely contains one
 // arrives renamed, where it can collide with a note type the user already has.
 describe(`quotes in note type and template names (${ANKI})`, () => {
-  const model = (name: string, templateName = "C") =>
-    new Model({
+  const notetype = (name: string, templateName = "C") =>
+    new Notetype({
       name,
       fields: [{ name: "F" }],
       templates: [{ name: templateName, questionFormat: "{{F}}", answerFormat: "x" }],
     });
 
   test("a quote in a note type name is refused", () => {
-    expect(() => model('Say "hi"')).toThrow(/must not contain a quote/);
+    expect(() => notetype('Say "hi"')).toThrow(/must not contain a quote/);
   });
   test("a quote in a template name is refused", () => {
-    expect(() => model("M", 'Card "1"')).toThrow(/must not contain a quote/);
+    expect(() => notetype("M", 'Card "1"')).toThrow(/must not contain a quote/);
   });
   test("an empty note type name is still refused", () => {
-    expect(() => model("")).toThrow(/must not be empty/);
+    expect(() => notetype("")).toThrow(/must not be empty/);
   });
   test("an empty template name is still refused", () => {
-    expect(() => model("M", "")).toThrow(/empty name/);
+    expect(() => notetype("M", "")).toThrow(/empty name/);
   });
   test("names without quotes are unaffected", () => {
-    expect(() => model("Vocab (FR to DE)", "Recognition")).not.toThrow();
+    expect(() => notetype("Vocab (FR to DE)", "Recognition")).not.toThrow();
   });
 });

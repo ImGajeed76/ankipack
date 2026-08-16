@@ -1,7 +1,8 @@
 import { DeckConfig } from "./deck-config.js";
 import type { Note } from "./note.js";
 import { IdGenerator } from "./util/id.js";
-import { toNormalizedDeckName } from "./util/text.js";
+import { rejectLoneSurrogates, toNormalizedDeckName } from "./util/text.js";
+import { fail } from "./error.js";
 
 const idGen = new IdGenerator();
 
@@ -18,18 +19,18 @@ export interface DeckOptions {
    *   - `DeckConfig` instance: ship that preset; the deck references it.
    *   - `undefined` (omitted): ship a unique auto-generated preset named
    *     `"<deck name> Config"` with library defaults.
-   *   - `null`: ship NO preset. The deck's `config_id` is set to `1` so Anki
-   *     resolves it to the user's existing built-in "Default" preset on
-   *     import. The apkg contains no deck_config row, so nothing new appears
-   *     in the user's preset list.
+   *   - `null`: ship no preset of your own. The deck's `config_id` is `1`, the
+   *     user's existing built-in "Default". The package still carries a
+   *     placeholder row at that id, which Anki's gather pass needs and its
+   *     `INSERT OR IGNORE` then drops, so their preset list is unchanged.
    */
   config?: DeckConfig | null;
 }
 
 /**
- * Returned by `getEffectiveConfig` for a deck created with `config: null`, so
- * the package writer ships no deck_config row and points the deck at Anki's
- * built-in default preset (id=1).
+ * What `getEffectiveConfig` returns for a deck created with `config: null`. The
+ * deck points at preset 1, the user's own Default, and the package carries a
+ * placeholder row there that Anki's import drops.
  */
 export const NO_PRESET = "no-preset" as const;
 export type NoPreset = typeof NO_PRESET;
@@ -44,7 +45,7 @@ export type NoPreset = typeof NO_PRESET;
  *   description: "Chapter 1 vocabulary",
  *   config: new DeckConfig({ desiredRetention: 0.9 }),
  * });
- * deck.addNote(new Note({ model, fields: ["bonjour", "hello"] }));
+ * deck.addNote(new Note({ notetype, fields: ["bonjour", "hello"] }));
  * ```
  */
 export class Deck {
@@ -57,15 +58,16 @@ export class Deck {
 
   constructor(options: DeckOptions) {
     if (options.id !== undefined && !Number.isSafeInteger(options.id)) {
-      throw new Error(`Deck id must be a safe integer, got ${options.id}`);
+      fail("invalid-input", `Deck id must be a safe integer, got ${options.id}`);
     }
     this.id = options.id ?? idGen.next();
+    rejectLoneSurrogates(options.name, `Deck name ${JSON.stringify(options.name)}`);
     this.name = options.name;
     this.description = options.description;
     this.config = options.config;
   }
 
-  /** Add a note to this deck. Each note generates one or more cards based on its model. */
+  /** Add a note. It generates one card per template its note type renders. */
   addNote(note: Note): void {
     this.notes.push(note);
   }

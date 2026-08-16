@@ -1,6 +1,8 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from "sql.js";
-import { unzipSync, strFromU8 } from "fflate";
-import type { Package } from "../../src/index";
+import { unzipSync } from "fflate";
+import { decompress } from "fzstd";
+import { fromBinary } from "@bufbuild/protobuf";
+import { MediaEntriesSchema } from "../../src/generated/anki/import_export_pb";
 
 let sqlPromise: Promise<SqlJsStatic> | undefined;
 
@@ -11,29 +13,38 @@ export function getSql(): Promise<SqlJsStatic> {
 }
 
 export interface OpenedPackage {
-  /** The apkg's `collection.anki2`, opened. Callers must `close()` it. */
+  /** The apkg's collection, decompressed and opened. Callers must `close()` it. */
   db: Database;
   /** The apkg's `media` index: archive entry name -> original filename. */
   mediaIndex: Record<string, string>;
-  /** Every entry in the apkg archive, keyed by name. */
+  /** Every entry in the apkg archive, keyed by name. Media stay compressed. */
   entries: Record<string, Uint8Array>;
 }
 
-/** Build a package and crack it open so tests can inspect what actually shipped. */
-export async function openPackage(pkg: Package): Promise<OpenedPackage> {
+/**
+ * Serialise a package or an opened collection and crack it open, so tests can
+ * inspect what actually shipped.
+ * Deliberately unzips and decompresses by hand rather than calling the reader,
+ * so a test asserting on the output cannot be fooled by a matching bug in the
+ * reader.
+ */
+export async function openPackage(pkg: {
+  toUint8Array: (SQL: SqlJsStatic) => Promise<Uint8Array>;
+}): Promise<OpenedPackage> {
   const SQL = await getSql();
   const entries = unzipSync(await pkg.toUint8Array(SQL));
 
-  const collection = entries["collection.anki2"];
-  if (!collection) throw new Error("apkg contains no collection.anki2 entry");
+  const collection = entries["collection.anki21b"];
+  if (!collection) throw new Error("apkg contains no collection.anki21b entry");
   const media = entries["media"];
   if (!media) throw new Error("apkg contains no media index entry");
 
-  return {
-    db: new SQL.Database(collection),
-    mediaIndex: JSON.parse(strFromU8(media)) as Record<string, string>,
-    entries,
-  };
+  const mediaIndex: Record<string, string> = {};
+  fromBinary(MediaEntriesSchema, decompress(media)).entries.forEach((entry, index) => {
+    mediaIndex[String(index)] = entry.name;
+  });
+
+  return { db: new SQL.Database(decompress(collection)), mediaIndex, entries };
 }
 
 export interface Rows {

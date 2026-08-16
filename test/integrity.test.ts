@@ -2,7 +2,9 @@ import { describe, test, expect } from "bun:test";
 import type { SqlValue } from "sql.js";
 import { FIXTURES, fixtureByName } from "./fixtures";
 import { openPackage, column, scalar, type OpenedPackage } from "./helpers/collection";
-import { checkIntegrity } from "./helpers/integrity";
+import { checkIntegrity, checkPositionsGapless } from "./helpers/integrity";
+import { Collection, Deck, Note, Notetype, Package } from "../src/index";
+import { getSql } from "./helpers/collection";
 
 // Invariants a single snapshot cannot express: references resolving, and
 // properties that only exist across two runs.
@@ -12,7 +14,7 @@ describe("referential integrity", () => {
     test(`${fixture.name} has no dangling references`, async () => {
       const opened = await openPackage(fixture.build());
       try {
-        const problems = checkIntegrity(opened);
+        const problems = [...checkIntegrity(opened), ...checkPositionsGapless(opened)];
         const report = problems.map((p) => `[${p.check}] ${p.detail}`).join("\n");
         expect(report).toBe("");
       } finally {
@@ -77,6 +79,49 @@ describe("collection header", () => {
     const opened = await openPackage(FIXTURES[0].build());
     try {
       expect(column(opened.db, "SELECT id FROM col")).toEqual([1]);
+    } finally {
+      opened.db.close();
+    }
+  });
+});
+
+// The fixtures above only ever build a package. Reading, editing and writing
+// back is the path that can leave a note pointing at a note type it no longer
+// matches, and referential integrity is what Anki's importer refuses on.
+describe("referential integrity survives an edit", () => {
+  async function edited(): Promise<Collection> {
+    const SQL = await getSql();
+    const notetype = Notetype.basic({ name: "Edit Probe" });
+    const first = new Deck({ name: "Keep" });
+    const second = new Deck({ name: "Drop" });
+    first.addNote(new Note({ notetype, fields: ["one", "eins"] }));
+    second.addNote(new Note({ notetype, fields: ["two", "zwei"] }));
+    const pkg = new Package();
+    pkg.addDeck(first);
+    pkg.addDeck(second);
+
+    const col = Collection.open(await pkg.toUint8Array(SQL), SQL);
+    await col.addNote({
+      notetype: "Edit Probe",
+      deck: "Keep",
+      fields: ["three", "drei"],
+      tags: ["added"],
+    });
+    await col.addDeck(new Deck({ name: "Fresh" }));
+    col.addNotetype(Notetype.cloze({ name: "Edit Cloze" }));
+    col.renameDeck("Drop", "Renamed");
+    const [note] = col.notes({ deck: "Keep" });
+    await note.setFields(["edited", "bearbeitet"]);
+    col.removeNote(col.notes({ deck: "Renamed" })[0].id);
+    col.setMedia("added.png", new Uint8Array([1, 2, 3]));
+    return col;
+  }
+
+  test("add, edit, rename and remove leave no dangling references", async () => {
+    const opened = await openPackage(await edited());
+    try {
+      const problems = checkIntegrity(opened);
+      expect(problems.map((p) => `[${p.check}] ${p.detail}`).join("\n")).toBe("");
     } finally {
       opened.db.close();
     }

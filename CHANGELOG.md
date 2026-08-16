@@ -1,5 +1,179 @@
 # Changelog
 
+## Unreleased
+
+ankipack can now read an `.apkg`, change it, and write it back. Building and
+reading share one internal representation of a collection, so there is one
+serialiser rather than two that can drift apart.
+
+Breaking
+
+- Packages are written in Anki's current layout: a `meta` record, a
+  zstd-framed `collection.anki21b`, and a protobuf media index whose files are
+  framed individually. Previously ankipack wrote the legacy
+  `collection.anki2` with a JSON media index. Anki accepts both; anything else
+  reading the file needs to handle the new one.
+
+- `Model` is now `Notetype`, and `NoteOptions.model` is `notetype`. Anki calls
+  this a note type everywhere: its interface, its Rust core and its protobuf
+  service all say notetype, and `model` survives only as the schema 11 column
+  name and a deprecated alias in its Python library. Half the new reading API
+  already said notetype, so one of the two words had to go. `Model`,
+  `ModelOptions` and `Model.basic()` become `Notetype`, `NotetypeOptions` and
+  `Notetype.basic()`. There is no compatibility alias.
+
+- A lone surrogate is refused wherever text enters the library: deck, note type,
+  field, template and preset names, and a note's fields, tags and GUID. An
+  unpaired surrogate has no UTF-8 form, so Anki reads the column as invalid and
+  refuses the entire collection with nothing naming the note. 0.2.0 accepted
+  them all, so a build whose source can emit one now throws.
+
+- Deck, note type, field and template names are compared with full Unicode case
+  folding, which is what Anki's `COLLATE unicase` indexes use. `toLowerCase`
+  agrees for ASCII but not for `Straße` and `Strasse`, which Anki treats as one
+  deck: 0.2.0 shipped both and Anki silently merged the second deck's cards into
+  the first. Note type names were compared exactly, so `Vocab` and `vocab` got
+  through as well. Both now throw.
+
+- Every error is now an `AnkipackError` carrying a `code`, so a caller can tell
+  a missing deck from an unreadable file without matching on message text.
+  Anything that catches an `Error` still catches these.
+
+- `toUint8Array` refuses a document that would not import. `col.data` is the
+  documented escape hatch, so an edit there could produce a package whose notes
+  point at note types it does not contain, which Anki rejects outright, or one
+  whose field counts do not match, which imports as blank notes. Both now fail
+  at the save with the offending row named. A duplicate id used to surface as a
+  bare SQLite constraint message with nothing saying which row caused it.
+
+- Two notes in one package sharing a GUID are refused, and so is `addNote` with
+  a GUID the collection already holds. Anki matches an imported note to an
+  existing one by GUID and remaps the id. Two notes in one package both reach
+  the recipient, but Anki's GUID map holds one note per GUID, so a later release
+  can only ever update one of them. A GUID already in the collection is treated
+  as an edit of that note: its cards and review log stay, its fields are
+  replaced. Check Database calls both results healthy. The check sits where
+  ankipack creates the GUID rather than at the save, because Anki's own schema
+  puts no unique index on `notes.guid`, so a collection can arrive already
+  holding a duplicate and has to write back unchanged.
+
+- `addMedia` throws when the filename was already added. It used to replace the
+  bytes silently, which loses whichever file was added first.
+
+- Note type, field and template names must be in NFC. Anki normalises them on
+  import and leaves the template bodies alone, so an NFD field name parts
+  company with its own `{{ref}}` and every one of its cards renders "there is no
+  field called ...". Leading and trailing whitespace is judged by Rust's
+  `char::is_whitespace`, which JavaScript's `\s` disagrees with in both
+  directions: U+0085 was accepted and then trimmed by Anki, U+FEFF was refused
+  though Anki keeps it.
+
+- `addMedia` and `setMedia` apply Anki's full media filename rules. Anki refuses
+  a package outright unless every name is already normalised, so `diagram
+  [1].png`, `CON.png`, a name over 120 bytes, a trailing space, or an NFD name
+  of the kind a macOS filesystem returns each cost the user the entire deck.
+  0.2.0 rejected only an empty name, a path separator, `.`, `..` and an NFC
+  collision, so a build that shipped `photo [1].png` now throws. Anki's answer
+  for "unassigned code point" comes from Unicode 10, which is what its own
+  character tables are, so a recent emoji in a filename is refused too.
+
+- `sql.js` is now an optional peer dependency rather than a direct one. It was
+  always the caller's job to create the instance and pass it in, so installing
+  it was never ankipack's to decide, and it is most of the tree. `npm install
+  ankipack` drops from 28 MB to 4.5 MB. Install `sql.js` alongside ankipack, as
+  the README has always shown.
+
+Reading and editing
+
+- Two cards on the same note and template ordinal are refused. Anki's importer
+  inserts both, and only Check Database removes one, so until the recipient runs
+  it they study the same template twice.
+
+- Media filenames are checked at the save as well as at `addMedia` and
+  `setMedia`, since `col.data.media` reaches the writer directly and Anki
+  refuses the whole import over one bad name.
+
+- A damaged `col` JSON column is refused rather than read as empty. Read as
+  empty, an unreadable `models`, `decks` or `dconf` drops every note type, deck
+  or preset it holds, and an unreadable `conf` drops `schedVer`, which makes
+  Anki rerun its v1-to-v2 scheduler upgrade over cards that are already v2.
+
+- New: `Collection.open(bytes, SQL)` reads a package, and `toUint8Array` writes
+  it back. Every row is held, including tables ankipack has no API for, so
+  review history, scheduling state and collection settings survive an edit
+  untouched. That is the whole reason the document holds raw rows rather than
+  rebuilding from the builder types, which reset every scheduling column.
+- New: notes can be found by deck, tag or note type, and their fields, tags and
+  GUIDs read. Editing fields recomputes the sort field and the duplicate
+  checksum, marks the note changed since the last sync, and adds any card the
+  new content renders. Existing cards are never modified or deleted, matching
+  Anki's `new_cards_required`.
+- New: `addNote`, `removeNote` (which also removes the cards and review log and
+  leaves graves), `renameDeck`, `setMedia` and `removeMedia`.
+- New: `addDeck` and `addNotetype` take the same `Deck` and `Notetype` objects
+  used to build a package from scratch, so a deck or note type can be added to
+  a collection that was opened rather than built. `addDeck` brings the deck's
+  preset and any notes it already holds.
+- New: packages at schema 11, which is what older Anki versions and most
+  third-party generators produce, are converted on the way in. Note type, deck
+  and preset JSON becomes the schema 18 tables, and JSON keys ankipack does not
+  model are preserved in the protobuf `other` field the way Anki preserves them.
+- A schema ankipack does not fully model is refused rather than read partly,
+  and so is a filtered deck in a legacy package, since Anki empties those on
+  export and converting one would silently lose its search terms.
+
+Internal
+
+- `bun run check`, `lint` and `format:check` cover `test/` and `e2e/` as well as
+  `src/`. `prepublishOnly` runs all three, so a release cannot ship with them
+  broken.
+
+- Writing a collection runs in one transaction instead of committing every row
+  on its own. The per-row commits were most of the time a large package spent
+  writing, so a package with tens of thousands of notes writes several times
+  faster.
+
+- An unreadable package raises an `AnkipackError` rather than whatever fzstd,
+  sql.js or the protobuf decoder threw. A truncated download and a file that is
+  not an `.apkg` were the two cases the error contract missed.
+
+- `stripInternal` is on, so `@internal` members no longer appear in the
+  published types. `Collection.notetypeFor` was returning a type a consumer
+  could not name. `SortField` is exported, since `NoteRow.sfld` has that type.
+
+- Linting is type-aware and uses `strictTypeChecked`, so rules that need type
+  information now run: a floating promise, an unsafe `any`, a needless
+  assertion. `noImplicitOverride` is on. `no-unnecessary-condition` is the one
+  rule left off, because without `noUncheckedIndexedAccess` it reports every
+  `entries[name] === undefined` guard as unnecessary when those guards are what
+  report a missing zip entry.
+
+- `src/db.ts` is gone. Building a package now produces the document model and
+  hands it to the same writer reading uses, so the golden tests cover both.
+- zstd frames are written without a compressor. The format allows stored
+  blocks, so a conforming frame is a header plus the payload in raw blocks,
+  which avoids a WebAssembly dependency for compression. The archive is
+  deflated, which is where the size saving actually comes from.
+- New runtime dependency `fzstd` for reading zstd.
+
+Testing
+
+- New: an end-to-end suite under `e2e/` that runs Anki's own Rust core over the
+  files ankipack writes, via the `anki` package on PyPI pinned to the version
+  this library claims parity with. `bun run e2e:setup` then `bun run test:e2e`;
+  the default `bun test` does not touch it and needs no Python.
+- It asserts Anki accepts what ankipack writes, from the builder and from the
+  read-edit-write path, with a clean Check Database. For the schema 11
+  conversion it uses Anki as the oracle: Anki imports a legacy package and
+  re-exports it in the current format, and that is what ankipack's converter is
+  compared against.
+- Reading a collection Anki wrote now works. Anki declares six name columns
+  `COLLATE unicase`, which sql.js cannot register, and `tags` is WITHOUT ROWID
+  keyed on one, so SQLite could not even plan a scan. The collation is rewritten
+  out of the in-memory copy before reading. ankipack still writes those columns
+  without it: building the index under one collation and declaring another would
+  leave a btree whose order contradicts its own declaration.
+
 ## 0.2.0
 
 Audited every table ankipack writes against Anki 26.08.1's source. The

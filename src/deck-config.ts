@@ -10,7 +10,8 @@ import {
   DeckConfig_Config_LeechAction,
 } from "./generated/anki/deck_config_pb.js";
 import { IdGenerator } from "./util/id.js";
-import { rejectNul } from "./util/text.js";
+import { rejectLoneSurrogates, rejectNul } from "./util/text.js";
+import { fail } from "./error.js";
 
 const idGen = new IdGenerator();
 
@@ -323,7 +324,7 @@ const VALID_RANGES: Array<[keyof DeckConfigOptions, number, number]> = [
   ["historicalRetention", 0.7, 0.97],
 ];
 
-/** Options Anki stores as u32, so a fraction fails to encode later. */
+/** Options that take a list of numbers rather than a single one. */
 const ARRAY_OPTIONS = [
   "learnSteps",
   "relearnSteps",
@@ -331,6 +332,7 @@ const ARRAY_OPTIONS = [
   "easyDaysPercentages",
 ] as const satisfies ReadonlyArray<keyof DeckConfigOptions>;
 
+/** Options Anki stores as u32, so a fraction fails to encode later. */
 const INTEGER_OPTIONS: Array<keyof DeckConfigOptions> = [
   "newPerDay",
   "reviewsPerDay",
@@ -344,14 +346,17 @@ const INTEGER_OPTIONS: Array<keyof DeckConfigOptions> = [
 
 function validateDeckConfigOptions(options: DeckConfigOptions): void {
   if (options.id !== undefined && !Number.isSafeInteger(options.id)) {
-    throw new Error(`DeckConfig id must be a safe integer, got ${options.id}`);
+    fail("invalid-input", `DeckConfig id must be a safe integer, got ${options.id}`);
   }
-  if (options.name !== undefined) rejectNul(options.name, "DeckConfig name");
+  if (options.name !== undefined) {
+    rejectNul(options.name, "DeckConfig name");
+    rejectLoneSurrogates(options.name, "DeckConfig name");
+  }
 
   for (const key of INTEGER_OPTIONS) {
     const value = options[key];
     if (typeof value === "number" && !Number.isInteger(value)) {
-      throw new Error(`${String(key)} must be a whole number, got ${value}`);
+      fail("invalid-input", `${key} must be a whole number, got ${value}`);
     }
   }
 
@@ -360,7 +365,7 @@ function validateDeckConfigOptions(options: DeckConfigOptions): void {
     // NaN has to be caught explicitly: it compares false against both bounds,
     // and Anki's own check tests for it too.
     if (typeof value === "number" && (!Number.isFinite(value) || value < min || value > max)) {
-      throw new Error(`${String(key)} must be between ${min} and ${max}, got ${value}`);
+      fail("invalid-input", `${key} must be between ${min} and ${max}, got ${value}`);
     }
   }
 
@@ -368,7 +373,7 @@ function validateDeckConfigOptions(options: DeckConfigOptions): void {
   // any other length, which stops the user studying any deck at all.
   const easyDays = options.easyDaysPercentages;
   if (easyDays !== undefined && easyDays.length !== 0 && easyDays.length !== 7) {
-    throw new Error(`easyDaysPercentages must have 0 or 7 entries, got ${easyDays.length}`);
+    fail("invalid-input", `easyDaysPercentages must have 0 or 7 entries, got ${easyDays.length}`);
   }
 
   // Anki validates parameters when a preset is saved from its own UI, but the
@@ -378,7 +383,8 @@ function validateDeckConfigOptions(options: DeckConfigOptions): void {
   // Anki reads `params[20]` as the FSRS-6 decay, so a shorter vector is
   // silently downgraded to FSRS-5.
   if (fsrs !== undefined && fsrs.length !== 0 && fsrs.length < 21) {
-    throw new Error(
+    fail(
+      "invalid-input",
       `fsrsParams must be empty or hold at least 21 FSRS-6 values, got ${fsrs.length}`,
     );
   }
@@ -388,7 +394,7 @@ function validateDeckConfigOptions(options: DeckConfigOptions): void {
   for (const key of ARRAY_OPTIONS) {
     for (const value of options[key] ?? []) {
       if (!Number.isFinite(value)) {
-        throw new Error(`${key} must hold finite numbers, got ${value}`);
+        fail("invalid-input", `${key} must hold finite numbers, got ${value}`);
       }
     }
   }
@@ -398,7 +404,7 @@ function validateDeckConfigOptions(options: DeckConfigOptions): void {
   for (const key of ["learnSteps", "relearnSteps"] as const) {
     for (const value of options[key] ?? []) {
       if (value < 0) {
-        throw new Error(`${key} must not hold negative delays, got ${value}`);
+        fail("invalid-input", `${key} must not hold negative delays, got ${value}`);
       }
     }
   }

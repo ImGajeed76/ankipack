@@ -5,6 +5,23 @@
 
 import { trimRust, trimStartRust } from "./text.js";
 
+/**
+ * Anki's `SPECIAL_FIELDS` (rslib/src/notetype/mod.rs): names a template may use
+ * that are not fields of the notetype. All except `FrontSide` also count as
+ * non-empty during card generation, unless a real field shadows the name, and
+ * `Tags` counts only when the note is tagged.
+ */
+export const SPECIAL_FIELD_NAMES = [
+  "FrontSide",
+  "Card",
+  "CardFlag",
+  "Deck",
+  "Subdeck",
+  "Tags",
+  "Type",
+  "CardID",
+];
+
 type ParsedNode =
   | { kind: "replacement"; key: string }
   | { kind: "section"; key: string; negated: boolean; children: ParsedNode[] };

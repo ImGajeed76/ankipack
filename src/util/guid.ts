@@ -1,8 +1,11 @@
 import { BASE91_ALPHABET } from "./constants.js";
 
 /**
- * Generate a globally unique ID for a note using base91 encoding.
- * Uses a random 64-bit value encoded in base91 (10 chars).
+ * A note GUID: 64 random bits in Anki's base91 alphabet, up to 10 characters.
+ *
+ * Random per call, so a deck rebuilt from the same source ships new identities
+ * and re-importing it duplicates rather than updates. A publisher passes
+ * `guid` to `Note` instead.
  */
 export function generateGuid(): string {
   const bytes = new Uint8Array(8);

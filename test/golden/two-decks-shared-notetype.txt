@@ -1,4 +1,4 @@
-# Golden section dump of an apkg's collection.anki2.
+# Golden section dump of an apkg's collection.anki21b.
 #
 # Clock-derived values are symbolised: deck#1 / nt#1 / note#1 / card#1 /
 # dconf#1 for generated ids, dconf:1 for meaningful constants, time#1 for
@@ -52,10 +52,40 @@
     dconf: "{}"
     tags: "{}"
 
-== deck_config (1 row) ==
+== deck_config (2 rows) ==
   row 0
     id: dconf#1
-    name: "Typing Config"
+    name: "Deck One Config"
+    mtime_secs: time#1
+    usn: -1
+    config: {
+      "capAnswerTimeToSecs": 60,
+      "desiredRetention": 0.8999999761581421,
+      "easyMultiplier": 1.2999999523162842,
+      "graduatingIntervalEasy": 4,
+      "graduatingIntervalGood": 1,
+      "hardMultiplier": 1.2000000476837158,
+      "historicalRetention": 0.8999999761581421,
+      "initialEase": 2.5,
+      "intervalMultiplier": 1,
+      "learnSteps": [
+        1,
+        10
+      ],
+      "leechAction": "LEECH_ACTION_TAG_ONLY",
+      "leechThreshold": 8,
+      "maximumReviewInterval": 36500,
+      "minimumLapseInterval": 1,
+      "newPerDay": 20,
+      "relearnSteps": [
+        10
+      ],
+      "reviewsPerDay": 200,
+      "waitForAudio": true
+    }
+  row 1
+    id: dconf#2
+    name: "Deck Two Config"
     mtime_secs: time#1
     usn: -1
     config: {
@@ -84,10 +114,10 @@
       "waitForAudio": true
     }
 
-== decks (1 row) ==
+== decks (2 rows) ==
   row 0
     id: deck#1
-    name: "Typing"
+    name: "Deck One"
     mtime_secs: time#1
     usn: -1
     common: {}
@@ -96,23 +126,33 @@
         "configId": "dconf#1"
       }
     }
+  row 1
+    id: deck#2
+    name: "Deck Two"
+    mtime_secs: time#1
+    usn: -1
+    common: {}
+    kind: {
+      "normal": {
+        "configId": "dconf#2"
+      }
+    }
 
 == notetypes (1 row) ==
   row 0
     id: nt#1
-    name: "Basic (type in the answer)"
+    name: "Basic"
     mtime_secs: time#1
     usn: -1
     config: {
       "css": ".card {\n    font-family: arial;\n    font-size: 20px;\n    line-height: 1.5;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n",
       "latexPost": "\\end{document}",
       "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
-      "originalStockKind": "ORIGINAL_STOCK_KIND_BASIC_TYPING",
+      "originalStockKind": "ORIGINAL_STOCK_KIND_BASIC",
       "reqs": [
         {
           "fieldOrds": [
-            0,
-            1
+            0
           ],
           "kind": "KIND_ANY"
         }
@@ -127,7 +167,7 @@
     config: {
       "fontName": "Arial",
       "fontSize": 20,
-      "id": "6724029326726867425"
+      "id": "8349772215981052058"
     }
   row 1
     ntid: nt#1
@@ -136,7 +176,7 @@
     config: {
       "fontName": "Arial",
       "fontSize": 20,
-      "id": "4373180076799034402"
+      "id": "4155850074602335383"
     }
 
 == templates (1 row) ==
@@ -147,12 +187,12 @@
     mtime_secs: time#1
     usn: -1
     config: {
-      "aFormat": "{{Front}}\n\n<hr id=answer>\n\n{{type:Back}}",
-      "id": "2232687928315105017",
-      "qFormat": "{{Front}}\n\n{{type:Back}}"
+      "aFormat": "{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}",
+      "id": "7510756660587510910",
+      "qFormat": "{{Front}}"
     }
 
-== notes (1 row) ==
+== notes (2 rows) ==
   row 0
     id: note#1
     guid: guid#1
@@ -160,13 +200,25 @@
     mod: time#1
     usn: -1
     tags: ""
-    flds: "spell: bicycle\u001fbicycle"
-    sfld: "spell: bicycle"
-    csum: 219051562
+    flds: "one\u001feins"
+    sfld: "one"
+    csum: 4261788892
+    flags: 0
+    data: ""
+  row 1
+    id: note#2
+    guid: guid#2
+    mid: nt#1
+    mod: time#1
+    usn: -1
+    tags: ""
+    flds: "two\u001fzwei"
+    sfld: "two"
+    csum: 2910334669
     flags: 0
     data: ""
 
-== cards (1 row) ==
+== cards (2 rows) ==
   row 0
     id: card#1
     nid: note#1
@@ -177,6 +229,25 @@
     type: 0
     queue: 0
     due: 0
+    ivl: 0
+    factor: 0
+    reps: 0
+    lapses: 0
+    left: 0
+    odue: 0
+    odid: 0
+    flags: 0
+    data: ""
+  row 1
+    id: card#2
+    nid: note#2
+    did: deck#2
+    ord: 0
+    mod: time#1
+    usn: -1
+    type: 0
+    queue: 0
+    due: 1
     ivl: 0
     factor: 0
     reps: 0

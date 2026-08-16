@@ -2,7 +2,7 @@ import { fromBinary } from "@bufbuild/protobuf";
 import { Deck_KindContainerSchema } from "../../src/generated/anki/decks_pb";
 import { Notetype_ConfigSchema, Notetype_Config_Kind } from "../../src/generated/anki/notetypes_pb";
 import { FIELD_SEPARATOR } from "../../src/util/constants";
-import { query, type OpenedPackage } from "./collection";
+import { column, query, type OpenedPackage } from "./collection";
 
 // Anki's importer rejects an apkg whose internal references do not resolve
 // inside the apkg itself; these checks catch that class without Anki.
@@ -145,21 +145,47 @@ function checkCardOrdinals(opened: OpenedPackage, problems: IntegrityProblem[]):
 }
 
 /**
- * New-card positions must be a gapless 0..n-1 run, or the deck's order is
- * wrong. Positions are package-wide, not per deck.
+ * A new-card position belongs to a note, not to a card: Anki fills it once per
+ * note and gives every card of that note the same one, so no note may hold two.
+ *
+ * Whether the positions form a gapless run is checked by `checkPositionsGapless`
+ * instead, because removing a note from an opened collection leaves a gap that
+ * Anki never renumbers.
  */
 function checkCardPositions(opened: OpenedPackage, problems: IntegrityProblem[]): void {
-  const positions = query(opened.db, "SELECT due FROM cards ORDER BY due").values.map((row) =>
-    Number(row[0]),
-  );
-  positions.forEach((due, index) => {
+  const rows = query(opened.db, "SELECT nid, due FROM cards ORDER BY due").values.map((row) => ({
+    nid: String(row[0]),
+    due: Number(row[1]),
+  }));
+
+  const byNote = new Map<string, Set<number>>();
+  for (const { nid, due } of rows) {
+    if (!byNote.has(nid)) byNote.set(nid, new Set());
+    byNote.get(nid)?.add(due);
+  }
+  for (const [nid, dues] of byNote) {
+    if (dues.size > 1) {
+      problems.push({
+        check: "cards.due positions",
+        detail: `note ${nid} spreads its cards over positions ${[...dues].join(", ")}`,
+      });
+    }
+  }
+}
+
+/** Positions form a gapless 0..n-1 run. Only true of a package built from scratch. */
+export function checkPositionsGapless(opened: OpenedPackage): IntegrityProblem[] {
+  const problems: IntegrityProblem[] = [];
+  const dues = column(opened.db, "SELECT DISTINCT due FROM cards ORDER BY due").map(Number);
+  dues.forEach((due, index) => {
     if (due !== index) {
       problems.push({
         check: "cards.due positions",
-        detail: `expected a gapless 0..${positions.length - 1} run, found ${due} at index ${index}`,
+        detail: `expected a gapless 0..${dues.length - 1} run, found ${due} at index ${index}`,
       });
     }
   });
+  return problems;
 }
 
 function checkMedia(opened: OpenedPackage, problems: IntegrityProblem[]): void {

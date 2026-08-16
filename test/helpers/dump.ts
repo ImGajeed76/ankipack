@@ -1,3 +1,4 @@
+import { decompress } from "fzstd";
 import { fromBinary, toJson, type DescMessage, type JsonValue } from "@bufbuild/protobuf";
 import type { SqlValue } from "sql.js";
 import { DeckConfig_ConfigSchema } from "../../src/generated/anki/deck_config_pb";
@@ -185,6 +186,7 @@ class Symbols {
  * from a generated one, so fixture GUIDs are long on purpose.
  */
 function looksGenerated(guid: string): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- base91 is ASCII
   return guid.length > 0 && guid.length <= 10 && [...guid].every((c) => BASE91_CHARS.has(c));
 }
 
@@ -254,7 +256,7 @@ function renderCell(spec: ColumnSpec | undefined, raw: SqlValue, symbols: Symbol
 }
 
 const HEADER = [
-  "# Golden section dump of an apkg's collection.anki2.",
+  "# Golden section dump of an apkg's collection.anki21b.",
   "#",
   "# Clock-derived values are symbolised: deck#1 / nt#1 / note#1 / card#1 /",
   "# dconf#1 for generated ids, dconf:1 for meaningful constants, time#1 for",
@@ -315,14 +317,16 @@ function dumpMedia(opened: OpenedPackage): string {
   const keys = Object.keys(opened.mediaIndex).sort();
   const lines = [`== media (${plural(keys.length, "file")}) ==`];
   for (const key of keys) {
+    // Each entry is a zstd frame, so report the file's own size rather than
+    // the stored one, which would move with any framing change.
     const bytes = opened.entries[key];
-    const size = bytes ? `${bytes.length} bytes` : "ENTRY MISSING FROM ARCHIVE";
+    const size = bytes ? `${decompress(bytes).length} bytes` : "ENTRY MISSING FROM ARCHIVE";
     lines.push(`  ${key} -> ${JSON.stringify(opened.mediaIndex[key])} (${size})`);
   }
+  // The three fixed entries of Anki's latest layout, plus one per media file.
+  const STRUCTURAL = new Set(["meta", "collection.anki21b", "media"]);
   const extras = Object.keys(opened.entries)
-    .filter(
-      (name) => name !== "collection.anki2" && name !== "media" && !(name in opened.mediaIndex),
-    )
+    .filter((name) => !STRUCTURAL.has(name) && !(name in opened.mediaIndex))
     .sort();
   for (const name of extras) {
     lines.push(`  UNINDEXED ARCHIVE ENTRY: ${JSON.stringify(name)}`);
@@ -332,7 +336,7 @@ function dumpMedia(opened: OpenedPackage): string {
 
 export function dumpSchema(opened: OpenedPackage): string {
   const rows = query(opened.db, "SELECT type, name, sql FROM sqlite_master ORDER BY type, name");
-  const lines = ["# Complete DDL of the generated collection.anki2."];
+  const lines = ["# Complete DDL of the generated collection.anki21b."];
   for (const [type, name, sql] of rows.values) {
     lines.push(
       "",

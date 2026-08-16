@@ -1,15 +1,18 @@
 import { describe, test, expect } from "bun:test";
-import { Package, Deck, DeckConfig, Model, Note } from "../src/index";
+import { Package, Deck, DeckConfig, Notetype, Note } from "../src/index";
 import { openPackage, column, scalar, query, getSql } from "./helpers/collection";
+import { decompress } from "fzstd";
 
 // Named behavioural rules. The golden dumps already cover the full shape of a
 // generated collection, so this file only states the rules a reader should be
 // able to find by name, most of them about what lands in someone's collection.
 
 describe("API contract", () => {
-  test("a note whose field count differs from its model is rejected", () => {
-    const model = Model.basic();
-    expect(() => new Note({ model, fields: ["only one"] })).toThrow('model "Basic" expects 2');
+  test("a note whose field count differs from its note type is rejected", () => {
+    const notetype = Notetype.basic();
+    expect(() => new Note({ notetype, fields: ["only one"] })).toThrow(
+      'note type "Basic" expects 2',
+    );
   });
 
   test("a package with no decks is rejected", async () => {
@@ -32,33 +35,36 @@ describe("card generation", () => {
 
   test("a basic note generates one card", async () => {
     const deck = new Deck({ name: "Basic" });
-    deck.addNote(new Note({ model: Model.basic(), fields: ["Q", "A"] }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["Q", "A"] }));
     expect(await cardOrdinals(deck)).toEqual([0]);
   });
 
   test("a reversed note generates one card per template", async () => {
     const deck = new Deck({ name: "Reversed" });
-    deck.addNote(new Note({ model: Model.basicAndReversed(), fields: ["Q", "A"] }));
+    deck.addNote(new Note({ notetype: Notetype.basicAndReversed(), fields: ["Q", "A"] }));
     expect(await cardOrdinals(deck)).toEqual([0, 1]);
   });
 
   test("a template whose fields are all empty generates no card", async () => {
     const deck = new Deck({ name: "Empty Back" });
-    deck.addNote(new Note({ model: Model.basicAndReversed(), fields: ["front only", ""] }));
+    deck.addNote(new Note({ notetype: Notetype.basicAndReversed(), fields: ["front only", ""] }));
     expect(await cardOrdinals(deck)).toEqual([0]);
   });
 
   test("cloze generates one card per distinct deletion, ordinals 0-based", async () => {
     const deck = new Deck({ name: "Cloze" });
     deck.addNote(
-      new Note({ model: Model.cloze(), fields: ["{{c1::a}} and {{c2::b}} and {{c1::c}}", ""] }),
+      new Note({
+        notetype: Notetype.cloze(),
+        fields: ["{{c1::a}} and {{c2::b}} and {{c1::c}}", ""],
+      }),
     );
     expect(await cardOrdinals(deck)).toEqual([0, 1]);
   });
 
   test("cloze with no deletions still generates one card", async () => {
     const deck = new Deck({ name: "Cloze Plain" });
-    deck.addNote(new Note({ model: Model.cloze(), fields: ["no deletions here", ""] }));
+    deck.addNote(new Note({ notetype: Notetype.cloze(), fields: ["no deletions here", ""] }));
     expect(await cardOrdinals(deck)).toEqual([0]);
   });
 });
@@ -77,13 +83,13 @@ describe("deck presets", () => {
     }
   }
 
-  // One shared model: two Model instances with the same name in one package
+  // One shared note type: two Notetype instances with the same name in one package
   // collide on the notetypes name unique index.
-  const model = Model.basic();
+  const notetype = Notetype.basic();
 
   function deckWithNote(options: ConstructorParameters<typeof Deck>[0]): Deck {
     const deck = new Deck(options);
-    deck.addNote(new Note({ model, fields: ["a", "b"] }));
+    deck.addNote(new Note({ notetype, fields: ["a", "b"] }));
     return deck;
   }
 
@@ -131,7 +137,7 @@ describe("note contents", () => {
   test("tags are stored space-delimited and space-padded", async () => {
     const deck = new Deck({ name: "Tags" });
     deck.addNote(
-      new Note({ model: Model.basic(), fields: ["Q", "A"], tags: ["vocab", "chapter1"] }),
+      new Note({ notetype: Notetype.basic(), fields: ["Q", "A"], tags: ["vocab", "chapter1"] }),
     );
     const pkg = new Package();
     pkg.addDeck(deck);
@@ -145,7 +151,7 @@ describe("note contents", () => {
 
   test("an untagged note stores an empty tag string", async () => {
     const deck = new Deck({ name: "Untagged" });
-    deck.addNote(new Note({ model: Model.basic(), fields: ["Q", "A"] }));
+    deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["Q", "A"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -157,14 +163,14 @@ describe("note contents", () => {
   });
 
   test("sortFieldIndex chooses which field is written to sfld", async () => {
-    const model = new Model({
+    const notetype = new Notetype({
       name: "Sorted",
       sortFieldIndex: 1,
       fields: [{ name: "First" }, { name: "Second" }],
       templates: [{ name: "Card 1", questionFormat: "{{First}}", answerFormat: "{{Second}}" }],
     });
     const deck = new Deck({ name: "Sorting" });
-    deck.addNote(new Note({ model, fields: ["ignored", "sort on me"] }));
+    deck.addNote(new Note({ notetype, fields: ["ignored", "sort on me"] }));
     const pkg = new Package();
     pkg.addDeck(deck);
     const opened = await openPackage(pkg);
@@ -178,11 +184,11 @@ describe("note contents", () => {
   // Anki dedupes on the first field's checksum, so it must depend on that field
   // alone. If it drifted to cover every field, duplicate detection would break.
   test("csum is derived from the first field only", async () => {
-    const model = Model.basic();
+    const notetype = Notetype.basic();
     const deck = new Deck({ name: "Checksums" });
-    deck.addNote(new Note({ model, fields: ["same front", "one back"] }));
-    deck.addNote(new Note({ model, fields: ["same front", "other back"] }));
-    deck.addNote(new Note({ model, fields: ["different front", "one back"] }));
+    deck.addNote(new Note({ notetype, fields: ["same front", "one back"] }));
+    deck.addNote(new Note({ notetype, fields: ["same front", "other back"] }));
+    deck.addNote(new Note({ notetype, fields: ["different front", "one back"] }));
 
     const pkg = new Package();
     pkg.addDeck(deck);
@@ -199,11 +205,11 @@ describe("note contents", () => {
 
 describe("packaging", () => {
   test("cards are filed under the deck their note was added to", async () => {
-    const model = Model.basic();
+    const notetype = Notetype.basic();
     const first = new Deck({ name: "First" });
     const second = new Deck({ name: "Second" });
-    first.addNote(new Note({ model, fields: ["one", "eins"] }));
-    second.addNote(new Note({ model, fields: ["two", "zwei"] }));
+    first.addNote(new Note({ notetype, fields: ["one", "eins"] }));
+    second.addNote(new Note({ notetype, fields: ["two", "zwei"] }));
 
     const pkg = new Package();
     pkg.addDeck(first);
@@ -223,12 +229,12 @@ describe("packaging", () => {
     }
   });
 
-  test("a model used by several decks is inserted once", async () => {
-    const model = Model.basic();
+  test("a note type used by several decks is inserted once", async () => {
+    const notetype = Notetype.basic();
     const first = new Deck({ name: "First" });
     const second = new Deck({ name: "Second" });
-    first.addNote(new Note({ model, fields: ["a", "b"] }));
-    second.addNote(new Note({ model, fields: ["c", "d"] }));
+    first.addNote(new Note({ notetype, fields: ["a", "b"] }));
+    second.addNote(new Note({ notetype, fields: ["c", "d"] }));
 
     const pkg = new Package();
     pkg.addDeck(first);
@@ -243,7 +249,9 @@ describe("packaging", () => {
 
   test("media files are indexed by position and stored under that name", async () => {
     const deck = new Deck({ name: "Media" });
-    deck.addNote(new Note({ model: Model.basic(), fields: ['<img src="diagram.png">', "answer"] }));
+    deck.addNote(
+      new Note({ notetype: Notetype.basic(), fields: ['<img src="diagram.png">', "answer"] }),
+    );
     const pkg = new Package();
     pkg.addDeck(deck);
     pkg.addMedia("diagram.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
@@ -251,7 +259,8 @@ describe("packaging", () => {
     const opened = await openPackage(pkg);
     try {
       expect(opened.mediaIndex).toEqual({ "0": "diagram.png" });
-      expect(Array.from(opened.entries["0"])).toEqual([0x89, 0x50, 0x4e, 0x47]);
+      // Latest stores each media file as its own zstd frame.
+      expect(Array.from(decompress(opened.entries["0"]))).toEqual([0x89, 0x50, 0x4e, 0x47]);
     } finally {
       opened.db.close();
     }

@@ -1,4 +1,4 @@
-import { Package, Deck, DeckConfig, Model, Note } from "../src/index";
+import { Package, Deck, DeckConfig, Notetype, Note } from "../src/index";
 
 // One fixture per scenario the package has to get right. Each builds a fresh
 // Package, because ids are assigned at construction time. Every fixture is
@@ -23,11 +23,11 @@ export const FIXTURES: Fixture[] = [
     name: "basic-three-notes",
     covers: "the ordinary path: one deck, one notetype, one card per note",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const deck = new Deck({ name: "Capitals" });
-      deck.addNote(new Note({ model, fields: ["Capital of Peru", "Lima"] }));
-      deck.addNote(new Note({ model, fields: ["Capital of Nepal", "Kathmandu"] }));
-      deck.addNote(new Note({ model, fields: ["Capital of Ghana", "Accra"] }));
+      deck.addNote(new Note({ notetype, fields: ["Capital of Peru", "Lima"] }));
+      deck.addNote(new Note({ notetype, fields: ["Capital of Nepal", "Kathmandu"] }));
+      deck.addNote(new Note({ notetype, fields: ["Capital of Ghana", "Accra"] }));
       return packageOf(deck);
     },
   },
@@ -35,9 +35,9 @@ export const FIXTURES: Fixture[] = [
     name: "reversed-two-cards",
     covers: "one note generating a card per template",
     build: () => {
-      const model = Model.basicAndReversed();
+      const notetype = Notetype.basicAndReversed();
       const deck = new Deck({ name: "Reversed" });
-      deck.addNote(new Note({ model, fields: ["oak", "Eiche"] }));
+      deck.addNote(new Note({ notetype, fields: ["oak", "Eiche"] }));
       return packageOf(deck);
     },
   },
@@ -45,19 +45,19 @@ export const FIXTURES: Fixture[] = [
     name: "reversed-empty-back",
     covers: "a template that renders nothing produces no card of its own",
     build: () => {
-      const model = Model.basicAndReversed();
+      const notetype = Notetype.basicAndReversed();
       const deck = new Deck({ name: "Half Filled" });
-      deck.addNote(new Note({ model, fields: ["only a front", ""] }));
+      deck.addNote(new Note({ notetype, fields: ["only a front", ""] }));
       return packageOf(deck);
     },
   },
   {
-    name: "typing-model",
+    name: "typing-notetype",
     covers: "{{type:Field}} counting as content for card generation",
     build: () => {
-      const model = Model.basicTyping();
+      const notetype = Notetype.basicTyping();
       const deck = new Deck({ name: "Typing" });
-      deck.addNote(new Note({ model, fields: ["spell: bicycle", "bicycle"] }));
+      deck.addNote(new Note({ notetype, fields: ["spell: bicycle", "bicycle"] }));
       return packageOf(deck);
     },
   },
@@ -65,11 +65,11 @@ export const FIXTURES: Fixture[] = [
     name: "cloze-two-deletions",
     covers: "one card per cloze ordinal, and cloze ords bypassing the template check",
     build: () => {
-      const model = Model.cloze();
+      const notetype = Notetype.cloze();
       const deck = new Deck({ name: "Cloze" });
       deck.addNote(
         new Note({
-          model,
+          notetype,
           fields: ["{{c1::Lima}} is the capital of {{c2::Peru}}", "South America"],
         }),
       );
@@ -92,7 +92,7 @@ export const FIXTURES: Fixture[] = [
         buryReviews: true,
       });
       const deck = new Deck({ name: "Exam", config });
-      deck.addNote(new Note({ model: Model.basic(), fields: ["Q", "A"] }));
+      deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["Q", "A"] }));
       return packageOf(deck);
     },
   },
@@ -101,7 +101,7 @@ export const FIXTURES: Fixture[] = [
     covers: "config omitted: a generated preset named after the deck, never at id=1",
     build: () => {
       const deck = new Deck({ name: "Auto" });
-      deck.addNote(new Note({ model: Model.basic(), fields: ["a", "b"] }));
+      deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["a", "b"] }));
       return packageOf(deck);
     },
   },
@@ -110,7 +110,7 @@ export const FIXTURES: Fixture[] = [
     covers: "config: null shipping the id=1 placeholder Anki's gather pass requires",
     build: () => {
       const deck = new Deck({ name: "Inherits Default", config: null });
-      deck.addNote(new Note({ model: Model.basic(), fields: ["a", "b"] }));
+      deck.addNote(new Note({ notetype: Notetype.basic(), fields: ["a", "b"] }));
       return packageOf(deck);
     },
   },
@@ -118,23 +118,23 @@ export const FIXTURES: Fixture[] = [
     name: "no-preset-two-decks",
     covers: "two NO_PRESET decks still shipping exactly one placeholder row",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const first = new Deck({ name: "First", config: null });
       const second = new Deck({ name: "Second", config: null });
-      first.addNote(new Note({ model, fields: ["a", "b"] }));
-      second.addNote(new Note({ model, fields: ["c", "d"] }));
+      first.addNote(new Note({ notetype, fields: ["a", "b"] }));
+      second.addNote(new Note({ notetype, fields: ["c", "d"] }));
       return packageOf(first, second);
     },
   },
   {
-    name: "two-decks-shared-model",
+    name: "two-decks-shared-notetype",
     covers: "one notetype inserted once across decks, cards landing in the right deck",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const first = new Deck({ name: "Deck One" });
       const second = new Deck({ name: "Deck Two" });
-      first.addNote(new Note({ model, fields: ["one", "eins"] }));
-      second.addNote(new Note({ model, fields: ["two", "zwei"] }));
+      first.addNote(new Note({ notetype, fields: ["one", "eins"] }));
+      second.addNote(new Note({ notetype, fields: ["two", "zwei"] }));
       return packageOf(first, second);
     },
   },
@@ -142,11 +142,11 @@ export const FIXTURES: Fixture[] = [
     name: "media-and-tags",
     covers: "the media index, archive entries, and tag serialisation",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const deck = new Deck({ name: "Media" });
       deck.addNote(
         new Note({
-          model,
+          notetype,
           fields: ['<img src="diagram.png">', "[sound:answer.mp3]"],
           tags: ["vocab", "chapter1"],
         }),
@@ -158,10 +158,10 @@ export const FIXTURES: Fixture[] = [
     },
   },
   {
-    name: "custom-model-subdeck",
+    name: "custom-notetype-subdeck",
     covers: "custom fields and templates, a :: subdeck name, and a deck description",
     build: () => {
-      const model = new Model({
+      const notetype = new Notetype({
         name: "Vocab (FR to DE)",
         sortFieldIndex: 1,
         fields: [
@@ -181,7 +181,7 @@ export const FIXTURES: Fixture[] = [
         name: "Languages::French::Chapter 1",
         description: "Chapter 1 vocabulary",
       });
-      deck.addNote(new Note({ model, fields: ["chien", "Hund", ""] }));
+      deck.addNote(new Note({ notetype, fields: ["chien", "Hund", ""] }));
       return packageOf(deck);
     },
   },
@@ -190,13 +190,13 @@ export const FIXTURES: Fixture[] = [
     covers:
       "caller-supplied GUIDs being used verbatim, which decides update vs duplicate on re-import",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const deck = new Deck({ name: "Stable Identity" });
       deck.addNote(
-        new Note({ model, fields: ["first", "erste"], guid: "fixture-guid-first-note" }),
+        new Note({ notetype, fields: ["first", "erste"], guid: "fixture-guid-first-note" }),
       );
       deck.addNote(
-        new Note({ model, fields: ["second", "zweite"], guid: "fixture-guid-second-note" }),
+        new Note({ notetype, fields: ["second", "zweite"], guid: "fixture-guid-second-note" }),
       );
       return packageOf(deck);
     },
@@ -205,11 +205,11 @@ export const FIXTURES: Fixture[] = [
     name: "unicode-and-html",
     covers: "non-ASCII, quotes, and markup surviving into flds and sfld intact",
     build: () => {
-      const model = Model.basic();
+      const notetype = Notetype.basic();
       const deck = new Deck({ name: "Encoding" });
       deck.addNote(
         new Note({
-          model,
+          notetype,
           fields: ['Grüße & <b>"bold"</b>', "日本語 / emoji \u{1F600}"],
         }),
       );

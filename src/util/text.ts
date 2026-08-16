@@ -1,5 +1,6 @@
 import { FIELD_SEPARATOR } from "./constants.js";
 import { NAMED_ENTITIES } from "./html-entities.js";
+import { fail } from "../error.js";
 
 // Text transforms ported from Anki 26.08.1 so the generated collection holds
 // what Anki itself would write.
@@ -26,11 +27,43 @@ export function trimRust(text: string): string {
 /**
  * sql.js binds strings as NUL-terminated, so a NUL silently discards the rest
  * of the column. Anki stores these identifiers verbatim, so there is no rewrite
- * of its to mirror and the caller has to hear about it instead.
+ * of Anki's to copy and the caller has to hear about it instead.
  */
 export function rejectNul(value: string, label: string): void {
   if (value.includes("\0")) {
-    throw new Error(`${label} contains a NUL character, which cannot be stored in the collection`);
+    fail(
+      "invalid-input",
+      `${label} contains a NUL character, which cannot be stored in the collection`,
+    );
+  }
+}
+
+/** Anki's `is_ascii_control`: stripped from tags and note fields, refused in a media name. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+export const IS_ASCII_CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** A UTF-16 code unit with no partner, which no UTF-8 encoding can represent. */
+export function isLoneSurrogate(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return code >= 0xd800 && code <= 0xdfff;
+}
+
+/**
+ * SQLite stores text as UTF-8, and `String.fromCharCode(0xd800)` has no UTF-8
+ * form, so it is written as replacement bytes. Anki's Rust core reads the
+ * column as `&str` and refuses the whole collection with a Utf8 error, which
+ * surfaces as "not a valid .apkg file" with nothing naming the note.
+ */
+export function rejectLoneSurrogates(value: string, label: string): void {
+  for (const char of value) {
+    if (isLoneSurrogate(char)) {
+      const point = (char.codePointAt(0) ?? 0).toString(16).toUpperCase();
+      fail(
+        "invalid-input",
+        `${label} contains the lone surrogate U+${point}, which cannot be encoded as ` +
+          `UTF-8. Anki refuses the entire collection rather than the one value.`,
+      );
+    }
   }
 }
 
@@ -67,7 +100,7 @@ const RUST_WORD = "\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}";
  * - the quoted branches require the `>` that is their whole reason to exist.
  *   Anki's `"[^"]+?"` also matches quoted runs the `[^>]` branch can consume,
  *   and that ambiguity is free under a DFA but exponential in a backtracking
- *   engine: a 136-character field took 29 seconds before this was narrowed.
+ *   engine, where a field of a few hundred characters does not finish.
  */
 const MEDIA_TAG = new RegExp(
   `<(?:img|audio|video|object|source)(?![${RUST_WORD}])` +
@@ -78,10 +111,94 @@ const MEDIA_TAG = new RegExp(
 );
 
 /**
- * Anki's `HTML`. Comments, style blocks and script blocks are removed with
- * their contents, not just their tags.
+ * Anki's `HTML` regex, as a single pass: comments, style and script blocks go
+ * with their contents, not just their tags.
+ *
+ * Hand-written because every alternative in that regex ends in a lazy `.*?`, so
+ * an unterminated `<` scans to end of input once per `<`, which is quadratic.
+ * Once a terminator is missing, none follows any later `<` either.
  */
-const HTML_TAG = /<!--.*?-->|<style.*?>.*?<\/style>|<script.*?>.*?<\/script>|<.*?>/gis;
+function stripHtmlTags(text: string): string {
+  let out = "";
+  let at = 0;
+  let noComment = false;
+  let noStyle = false;
+  let noScript = false;
+
+  for (;;) {
+    const open = text.indexOf("<", at);
+    if (open < 0) break;
+
+    let end = -1;
+
+    if (!noComment && text.startsWith("<!--", open)) {
+      end = text.indexOf("-->", open + 4);
+      if (end < 0) noComment = true;
+      else end += 3;
+    } else if (!noStyle && matchesAt(text, open, "<style")) {
+      end = closingBlock(text, open, "</style>");
+      if (end < 0) noStyle = true;
+    } else if (!noScript && matchesAt(text, open, "<script")) {
+      end = closingBlock(text, open, "</script>");
+      if (end < 0) noScript = true;
+    }
+
+    if (end < 0) {
+      const gt = text.indexOf(">", open + 1);
+      // No `>` after this `<` means none after any later one either.
+      if (gt < 0) break;
+      end = gt + 1;
+    }
+
+    out += text.slice(at, open);
+    at = end;
+  }
+
+  return out + text.slice(at);
+}
+
+/** The opening tag's `>`, then everything up to the matching closer. */
+function closingBlock(text: string, open: number, closer: string): number {
+  const gt = text.indexOf(">", open + 1);
+  if (gt < 0) return -1;
+  const close = indexOfCaseless(text, closer, gt + 1);
+  return close < 0 ? -1 : close + closer.length;
+}
+
+/**
+ * Whether `text` holds `lower` at `at`, compared the way Anki's `(?i)` does.
+ *
+ * In place, not against a lowercased copy: U+0130's `toLowerCase()` changes
+ * UTF-16 length so indices stop lining up, and a copy per tag is quadratic.
+ */
+function matchesAt(text: string, at: number, lower: string): boolean {
+  if (at + lower.length > text.length) return false;
+  for (let i = 0; i < lower.length; i++) {
+    if (!foldsTo(text[at + i], lower[i])) return false;
+  }
+  return true;
+}
+
+/** Closers all begin with `<`, so the scan can skip between candidates. */
+function indexOfCaseless(text: string, lower: string, from: number): number {
+  for (let at = text.indexOf("<", from); at >= 0; at = text.indexOf("<", at + 1)) {
+    if (matchesAt(text, at, lower)) return at;
+  }
+  return -1;
+}
+
+/**
+ * Rust's `(?i)` folds through Unicode case-folding orbits, which `toLowerCase`
+ * does not: U+017F LATIN SMALL LETTER LONG S folds with `s`, so Anki reads
+ * `<ſtyle>` as a style tag.
+ */
+function foldsTo(char: string, lowerAscii: string): boolean {
+  return (
+    char === lowerAscii || char.toLowerCase() === lowerAscii || LONG_S_FOLD[lowerAscii] === char
+  );
+}
+
+const LONG_S_FOLD: Record<string, string> = { s: "ſ" };
 
 const NON_BREAKING_SPACE = new RegExp(String.fromCharCode(0xa0), "g");
 
@@ -91,7 +208,7 @@ const NON_BREAKING_SPACE = new RegExp(String.fromCharCode(0xa0), "g");
  */
 export function stripHtmlPreservingMediaFilenames(text: string): string {
   const withFilenames = text.replace(MEDIA_TAG, (_match, dq, sq, bare) => ` ${dq ?? sq ?? bare} `);
-  return decodeEntities(withFilenames.replace(HTML_TAG, ""));
+  return decodeEntities(stripHtmlTags(withFilenames));
 }
 
 type DecodeState = "normal" | "entity" | "named" | "numeric" | "hex" | "dec";
@@ -190,9 +307,14 @@ export function toNativeDeckName(humanName: string): string {
   return humanName.split("::").map(normalizeDeckNameComponent).join(FIELD_SEPARATOR);
 }
 
-/** Anki's `NativeDeckName::human_name`: the deck name as Anki will display it. */
+/** Anki's `NativeDeckName::human_name`: a stored name as Anki will display it. */
+export function toHumanDeckName(nativeName: string): string {
+  return nativeName.split(FIELD_SEPARATOR).join("::");
+}
+
+/** The name Anki will display for a name the caller supplied. */
 export function toNormalizedDeckName(humanName: string): string {
-  return toNativeDeckName(humanName).split(FIELD_SEPARATOR).join("::");
+  return toHumanDeckName(toNativeDeckName(humanName));
 }
 
 const TRIM_COMPONENT_START = new RegExp(`^[${RUST_SPACE}:]+`);

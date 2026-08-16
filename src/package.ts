@@ -1,7 +1,10 @@
 import type { SqlJsStatic } from "sql.js";
-import { zipSync, strToU8 } from "fflate";
 import type { Deck } from "./deck.js";
-import { buildDatabase } from "./db.js";
+import { buildCollection } from "./collection/build.js";
+import { writePackage } from "./collection/write.js";
+import type { CollectionData } from "./collection/data.js";
+import { assertMediaFilename } from "./util/media-name.js";
+import { fail } from "./error.js";
 
 /**
  * A collection of decks and media files that can be exported as an `.apkg` file.
@@ -33,34 +36,10 @@ export class Package {
    * Reference it in card templates via its filename (e.g. `<img src="photo.jpg">`).
    */
   addMedia(filename: string, data: Uint8Array): void {
-    // Anki's `filename_is_safe` requires exactly one normal path component, and
-    // one bad name makes it reject the entire archive as corrupt.
-    const unsafe =
-      filename.length === 0 ||
-      filename.includes("/") ||
-      filename.includes("\\") ||
-      filename === "." ||
-      filename === "..";
-    if (unsafe) {
-      throw new Error(
-        `Media filename ${JSON.stringify(filename)} is not a plain filename: ` +
-          `Anki rejects the whole package for it`,
-      );
+    assertMediaFilename(filename);
+    if (this.media.has(filename)) {
+      fail("invalid-input", `Media filename ${JSON.stringify(filename)} was already added`);
     }
-
-    // Anki normalises filenames to NFC on import and keys them in a map, so two
-    // names that differ only by composition collapse into one and the loser's
-    // bytes are silently dropped.
-    const normalized = filename.normalize("NFC");
-    for (const existing of this.media.keys()) {
-      if (existing !== filename && existing.normalize("NFC") === normalized) {
-        throw new Error(
-          `Media filename ${JSON.stringify(filename)} collides with ` +
-            `${JSON.stringify(existing)} once Anki normalises it to NFC`,
-        );
-      }
-    }
-
     this.media.set(filename, data);
   }
 
@@ -73,34 +52,18 @@ export class Package {
    */
   async toUint8Array(SQL: SqlJsStatic): Promise<Uint8Array> {
     if (this.decks.length === 0) {
-      throw new Error("Package must contain at least one deck");
+      fail("invalid-input", "Package must contain at least one deck");
     }
+    return writePackage(await this.toCollection(), SQL);
+  }
 
-    // Build the SQLite database
-    const dbBytes = await buildDatabase(SQL, this.decks);
-
-    // Build media index and files
-    const mediaIndex: Record<string, string> = {};
-    const zipEntries: Record<string, Uint8Array> = {};
-
-    // Add the collection database
-    zipEntries["collection.anki2"] = dbBytes;
-
-    // Add media files
-    let mediaIdx = 0;
-    for (const [filename, data] of this.media) {
-      const idxStr = String(mediaIdx);
-      mediaIndex[idxStr] = filename;
-      zipEntries[idxStr] = data;
-      mediaIdx++;
-    }
-
-    // Add media index JSON
-    zipEntries["media"] = strToU8(JSON.stringify(mediaIndex));
-
-    // Create ZIP (store, no compression: the SQLite DB doesn't compress well
-    // and Anki doesn't require compression)
-    return zipSync(zipEntries, { level: 0 });
+  /**
+   * The document this package describes, before serialisation. Building and
+   * reading produce the same shape, so both go out through one writer.
+   */
+  async toCollection(): Promise<CollectionData> {
+    const media = [...this.media].map(([name, data]) => ({ name, data }));
+    return buildCollection(this.decks, media);
   }
 
   /**

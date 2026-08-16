@@ -1,7 +1,8 @@
 // The named entities Anki decodes, via the htmlescape crate, which ships the
 // legacy HTML4 set rather than the larger HTML5 one. An entity outside this
 // list makes htmlescape return an error, and Anki then leaves the whole
-// string undecoded. Generated; do not edit by hand.
+// string undecoded. Generated from the entity table htmlescape 0.3.1 ships,
+// which is the version anki@26.08.1 pins. Do not edit by hand.
 
 export const NAMED_ENTITIES: Record<string, string> = {
   AElig: "Æ",

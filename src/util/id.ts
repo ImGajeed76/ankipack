@@ -1,6 +1,7 @@
 /**
- * Sequential ID generator based on millisecond timestamps.
- * Each call returns a unique ID by incrementing from the initial timestamp.
+ * Ids counting up from `startFrom`, or from the clock when it is omitted. An
+ * opened collection seeds it past the highest id already in the document,
+ * because the clock alone reissues ids a package built moments ago has taken.
  */
 export class IdGenerator {
   private counter: number;

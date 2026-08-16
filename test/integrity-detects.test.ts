@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { Package, Deck, Model, Note } from "../src/index";
+import { Package, Deck, Notetype, Note } from "../src/index";
 import { openPackage, type OpenedPackage } from "./helpers/collection";
-import { checkIntegrity } from "./helpers/integrity";
+import { checkIntegrity, checkPositionsGapless, type IntegrityProblem } from "./helpers/integrity";
 
 // The integrity checks are what stand in for "would Anki accept this", so a
 // silent failure in one of them is worse than not having it: every fixture
@@ -10,10 +10,10 @@ import { checkIntegrity } from "./helpers/integrity";
 // matching check fires. Without these, "no problems found" proves nothing.
 
 async function corrupt(sql: string[]): Promise<string[]> {
-  const model = Model.basic();
+  const notetype = Notetype.basic();
   const deck = new Deck({ name: "Subject" });
-  deck.addNote(new Note({ model, fields: ["one", "eins"] }));
-  deck.addNote(new Note({ model, fields: ["two", "zwei"] }));
+  deck.addNote(new Note({ notetype, fields: ["one", "eins"] }));
+  deck.addNote(new Note({ notetype, fields: ["two", "zwei"] }));
 
   const pkg = new Package();
   pkg.addDeck(deck);
@@ -21,9 +21,13 @@ async function corrupt(sql: string[]): Promise<string[]> {
 
   const opened = await openPackage(pkg);
   try {
-    expect(checkIntegrity(opened)).toEqual([]);
+    const all = (o: OpenedPackage): IntegrityProblem[] => [
+      ...checkIntegrity(o),
+      ...checkPositionsGapless(o),
+    ];
+    expect(all(opened)).toEqual([]);
     for (const statement of sql) opened.db.run(statement);
-    return checkIntegrity(opened).map((p) => p.check);
+    return all(opened).map((p) => p.check);
   } finally {
     opened.db.close();
   }
@@ -96,7 +100,9 @@ describe("structural checks fire", () => {
 describe("media checks fire", () => {
   async function withMedia(mutate: (opened: OpenedPackage) => OpenedPackage): Promise<string[]> {
     const deck = new Deck({ name: "Media" });
-    deck.addNote(new Note({ model: Model.basic(), fields: ['<img src="shipped.png">', "answer"] }));
+    deck.addNote(
+      new Note({ notetype: Notetype.basic(), fields: ['<img src="shipped.png">', "answer"] }),
+    );
     const pkg = new Package();
     pkg.addDeck(deck);
     pkg.addMedia("shipped.png", new Uint8Array([1, 2, 3]));
