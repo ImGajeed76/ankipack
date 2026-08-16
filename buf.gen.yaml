@@ -4,3 +4,7 @@ plugins:
     out: src/generated
     opt:
       - target=ts
+      # The package is ESM and tsc does not rewrite import specifiers, so a
+      # relative import without `.js` is unresolvable for a Node consumer. Bun
+      # resolves it either way, so no test here would catch this being removed.
+      - import_extension=js
