@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ankipack — Dark</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+
+  <style>
+    html, body {
+      margin: 0;
+      background: #111;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      color: #fff;
+      font-size: 150px;
+      line-height: 1;
+    }
+
+    .anki {
+      font-family: "DM Mono", monospace;
+      font-weight: 500;
+      letter-spacing: -0.075em;
+    }
+
+    .pack {
+      font-family: "Nanum Pen Script", cursive;
+      font-size: 1.23em;
+      letter-spacing: -0.075em;
+      margin-left: 0.05em;
+      transform: translateY(0.02em);
+      transform-origin: left center;
+    }
+
+    .box {
+      font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+      font-size: 0.80em;
+      margin-left: 0.9em;
+      line-height: 1;
+      transform: translateY(-0.02em);
+    }
+  </style>
+</head>
+<body>
+  <div class="logo" aria-label="Ankipack">
+    <span class="anki">Anki</span><span class="pack">pack</span><span class="box">📦</span>
+  </div>
+</body>
+</html>
