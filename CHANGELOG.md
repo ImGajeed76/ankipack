@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ankipack can now read an `.apkg`, change it, and write it back. Building and
 reading share one internal representation of a collection, so there is one
