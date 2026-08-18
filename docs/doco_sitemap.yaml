@@ -1,0 +1,46 @@
+# Sidebar for the whole ankipack documentation set. One file rather than a
+# cascade: fifteen pages fit in three groups without scrolling, so a
+# per-category file would only duplicate this order three times.
+#
+# The tutorial is a top-level leaf, not a group of one.
+sitemap:
+  - title: Overview
+    url: ./index.md
+
+  - title: Your first deck
+    url: ./tutorial/first-deck.md
+
+  - title: How-to
+    children:
+      - title: Ship an updated deck
+        url: ./how-to/ship-updates.md
+      - title: Edit an existing .apkg
+        url: ./how-to/edit-apkg.md
+      - title: Attach media
+        url: ./how-to/media.md
+      - title: Generate a deck in the browser
+        url: ./how-to/browser.md
+
+  - title: Reference
+    children:
+      - title: Package, Deck and Note
+        url: ./reference/package-deck-note.md
+      - title: Notetype
+        url: ./reference/notetype.md
+      - title: DeckConfig
+        url: ./reference/deck-config.md
+      - title: Collection
+        url: ./reference/collection.md
+      - title: The collection document
+        url: ./reference/collection-document.md
+      - title: Errors
+        url: ./reference/errors.md
+
+  - title: Explanation
+    children:
+      - title: What Anki does on import
+        url: ./explanation/anki-import.md
+      - title: Why ankipack refuses input
+        url: ./explanation/validation.md
+      - title: The .apkg format
+        url: ./explanation/apkg-format.md
