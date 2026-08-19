@@ -188,7 +188,7 @@ If you want it decided rather than raced, set the timestamps yourself. There is
 no option on `Note` for this, so it happens as one more step of the same build,
 between assembling the package and writing it out:
 
-```ts novars title="deck.ts" hl_lines="38 43-45"
+```ts novars title="deck.ts" hl_lines="41 46-48"
 import { writeFile } from "node:fs/promises";
 import initSqlJs from "sql.js";
 import { Collection, Deck, DeckConfig, Note, Notetype, Package } from "ankipack";

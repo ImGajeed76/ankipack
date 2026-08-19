@@ -37,6 +37,9 @@ docolin:
 
 # ankipack
 
+![ankipack](./img/banner-light.png){ .light-only }
+![ankipack](./img/banner-dark.png){ .dark-only }
+
 ankipack builds Anki `.apkg` deck files from TypeScript, and opens ones that
 already exist so you can change them and write them back.
 
