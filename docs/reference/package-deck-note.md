@@ -23,22 +23,19 @@ docolin:
 
   aliases:
     [
-      Package,
-      Deck,
-      Note,
-      addDeck,
-      addMedia,
-      addNote,
-      writeToFile,
-      toUint8Array,
-      DeckOptions,
-      NoteOptions,
-      NO_PRESET,
-      collection.apkg,
+      build a deck,
+      create an apkg,
+      add notes to a deck,
+      subdecks,
+      ship no preset,
+      tag rules,
     ]
 
   references:
     - https://docs.ankiweb.net/exporting.html
+
+  prev: ../how-to/browser.md
+  next: ./notetype.md
 ---
 
 # Package, Deck and Note

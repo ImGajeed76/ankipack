@@ -24,17 +24,15 @@ docolin:
   aliases:
     [
       AnkipackError,
-      AnkipackErrorCode,
-      deck-not-found,
-      notetype-not-found,
-      name-conflict,
-      id-conflict,
+      error codes,
       invalid-input,
       media-name,
-      invalid-package,
       unsupported-schema,
-      invalid-document,
+      invalid-package,
     ]
+
+  prev: ./collection-document.md
+  next: ../explanation/anki-import.md
 ---
 
 # Errors

@@ -37,7 +37,7 @@ docolin:
     - https://docs.ankiweb.net/exporting.html
 
   prev: ../tutorial/first-deck.md
-  next: ../explanation/anki-import.md
+  next: ./edit-apkg.md
 ---
 
 # Ship an updated deck without duplicating notes

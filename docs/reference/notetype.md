@@ -23,16 +23,13 @@ docolin:
 
   aliases:
     [
-      Notetype,
-      NotetypeOptions,
-      FieldDef,
-      TemplateDef,
-      model,
       note type,
-      cloze,
-      basic,
+      anki model,
       card templates,
-      sortFieldIndex,
+      custom note type,
+      cloze deletion,
+      field name rules,
+      stock note types,
     ]
 
   references:
@@ -41,6 +38,9 @@ docolin:
     - https://docs.ankiweb.net/templates/styling.html
     - https://docs.ankiweb.net/editing.html#customizing-fields
     - https://docs.ankiweb.net/math.html
+
+  prev: ./package-deck-note.md
+  next: ./deck-config.md
 ---
 
 # Notetype

@@ -23,20 +23,20 @@ docolin:
 
   aliases:
     [
-      DeckConfig,
       deck options,
       deck preset,
-      scheduler,
-      fsrs,
-      desiredRetention,
-      fsrsParams,
-      learnSteps,
-      newPerDay,
-      leech,
+      scheduler settings,
+      fsrs parameters,
+      desired retention,
+      learning steps,
+      daily limits,
     ]
 
   references:
     - https://docs.ankiweb.net/deck-options.html
+
+  prev: ./notetype.md
+  next: ./collection.md
 ---
 
 # DeckConfig

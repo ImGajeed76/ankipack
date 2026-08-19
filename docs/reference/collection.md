@@ -23,20 +23,19 @@ docolin:
 
   aliases:
     [
-      Collection,
-      CollectionNote,
-      Collection.open,
-      addNote,
-      removeNote,
-      renameDeck,
-      setField,
-      setFields,
-      addTag,
-      subdecks,
+      open an apkg,
+      edit an existing deck,
+      find notes by tag,
+      edit note fields,
+      rename a deck,
+      keep review history,
     ]
 
   references:
     - https://docs.ankiweb.net/templates/generation.html
+
+  prev: ./deck-config.md
+  next: ./collection-document.md
 ---
 
 # Collection and CollectionNote

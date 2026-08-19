@@ -23,16 +23,16 @@ docolin:
 
   aliases:
     [
-      col.data,
-      CollectionData,
-      NoteRow,
-      CardRow,
-      DeckRow,
-      revlog,
-      graves,
+      raw collection rows,
+      anki database tables,
+      card scheduling state,
+      review history,
+      suspend a card,
       protobuf columns,
-      escape hatch,
     ]
+
+  prev: ./collection.md
+  next: ./errors.md
 ---
 
 # The collection document (`col.data`)

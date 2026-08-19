@@ -38,6 +38,9 @@ docolin:
   references:
     - https://sql.js.org/
     - https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL_static
+
+  prev: ./media.md
+  next: ../reference/package-deck-note.md
 ---
 
 # Generate a deck in the browser

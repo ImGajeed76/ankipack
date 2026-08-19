@@ -34,6 +34,9 @@ docolin:
 
   references:
     - https://docs.ankiweb.net/templates/generation.html
+
+  prev: ./ship-updates.md
+  next: ./media.md
 ---
 
 # Edit an existing `.apkg`

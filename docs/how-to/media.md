@@ -36,6 +36,9 @@ docolin:
   references:
     - https://docs.ankiweb.net/media.html
     - https://docs.ankiweb.net/templates/fields.html
+
+  prev: ./edit-apkg.md
+  next: ./browser.md
 ---
 
 # Attach media to a deck

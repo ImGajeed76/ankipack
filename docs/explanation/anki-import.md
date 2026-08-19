@@ -36,7 +36,7 @@ docolin:
     - https://docs.ankiweb.net/exporting.html
     - https://docs.ankiweb.net/deck-options.html
 
-  prev: ../how-to/ship-updates.md
+  prev: ../reference/errors.md
   next: ./validation.md
 ---
 
