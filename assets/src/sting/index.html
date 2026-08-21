@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>ankipack logo sting</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* Frozen locally. The render must not fetch fonts at frame time. */
+      @font-face {
+        font-family: "DM Mono";
+        font-style: normal;
+        font-weight: 500;
+        font-display: block;
+        src: url("fonts/dm-mono-500-latin.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Nanum Pen Script";
+        font-style: normal;
+        font-weight: 400;
+        font-display: block;
+        src: url("fonts/nanum-pen-script-latin.woff2") format("woff2");
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #111;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #111;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+
+      /* The lockup, in its final resting state. */
+      .lockup {
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+        color: #fff;
+        font-size: 200px;
+        line-height: 1;
+      }
+      .anki {
+        font-family: "DM Mono", monospace;
+        font-weight: 500;
+        letter-spacing: -0.075em;
+      }
+      .pack {
+        font-family: "Nanum Pen Script", cursive;
+        font-size: 1.23em;
+        letter-spacing: -0.075em;
+        margin-left: 0.05em;
+        transform: translateY(0.02em);
+      }
+      .char {
+        display: inline-block;
+      }
+      .box {
+        display: block;
+        width: 0.98em;
+        height: 0.98em;
+        margin-left: 0.9em;
+      }
+
+      /* Flashcards fly from off-frame into the box. */
+      .card {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 250px;
+        height: 158px;
+        border-radius: 18px;
+        background: #fff;
+        color: #111;
+        font-family: "DM Mono", monospace;
+        font-weight: 500;
+        font-size: 40px;
+        letter-spacing: -0.04em;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-width="1920"
+      data-height="1080"
+      data-duration="6"
+    >
+      <section id="stage" class="clip" data-start="0" data-duration="6" data-track-index="1">
+        <div id="card-1" class="card" data-layout-allow-overflow>hola</div>
+        <div id="card-2" class="card" data-layout-allow-overflow>gracias</div>
+        <div id="card-3" class="card" data-layout-allow-overflow>adiós</div>
+        <div id="card-4" class="card" data-layout-allow-overflow>por favor</div>
+        <div id="card-5" class="card" data-layout-allow-overflow>mañana</div>
+
+        <div id="lockup" class="lockup">
+          <span class="anki"
+            ><span class="char">A</span><span class="char">n</span><span class="char">k</span
+            ><span class="char">i</span></span
+          ><span class="pack"
+            ><span class="char">p</span><span class="char">a</span><span class="char">c</span
+            ><span class="char">k</span></span
+          ><img id="box" class="box" src="box.png" alt="" />
+        </div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // The box sits ~352px right of the lockup's centre, so parking the lockup
+      // at -352 puts the box dead centre while the cards pack into it.
+      const BOX_OFFSET = -352;
+
+      // Hardcoded rather than random, so every frame is reproducible from its
+      // time. Each starts just past the frame edge, so the ease plays out on screen.
+      const CARDS = [
+        { id: "#card-1", x: -1150, y: -380, r: -22 },
+        { id: "#card-2", x: 1150, y: -330, r: 18 },
+        { id: "#card-3", x: -1120, y: 350, r: 16 },
+        { id: "#card-4", x: 1170, y: 380, r: -20 },
+        { id: "#card-5", x: -60, y: -700, r: 6 },
+      ];
+
+      // Immediate rather than tl.set(..., 0), which does not apply while the
+      // playhead sits exactly on 0, so frame 0 would show the finished lockup.
+      gsap.set("#lockup", { x: BOX_OFFSET });
+      gsap.set(".anki .char", { opacity: 0, y: 34 });
+      gsap.set(".pack .char", { opacity: 0, y: 22, rotation: -8 });
+      gsap.set("#box", { opacity: 0, y: -620, scale: 0.5 });
+
+      // 1. The box arrives.
+      tl.to("#box", { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.6)" }, 0);
+
+      // 2. Five cards fly in and pack into it, each landing with a squash.
+      CARDS.forEach((c, i) => {
+        const t = 0.55 + i * 0.28;
+        tl.fromTo(
+          c.id,
+          { x: c.x, y: c.y, rotation: c.r, scale: 1, opacity: 1 },
+          { x: 0, y: 0, rotation: c.r * 0.25, duration: 0.72, ease: "power2.in" },
+          t,
+        );
+        // Scale is its own tween so the card crosses the frame at full size and
+        // only collapses once it is over the box.
+        tl.to(c.id, { scale: 0.12, duration: 0.34, ease: "power2.in" }, t + 0.38);
+        tl.to(c.id, { opacity: 0, duration: 0.14, ease: "power1.in" }, t + 0.58);
+        tl.to(
+          "#box",
+          { scaleX: 1.1, scaleY: 0.9, duration: 0.09, yoyo: true, repeat: 1, ease: "power2.out" },
+          t + 0.66,
+        );
+      });
+
+      // 3. The lockup slides home while the wordmark writes itself on.
+      tl.to("#lockup", { x: 0, duration: 0.6, ease: "power3.inOut" }, 2.5);
+      tl.to(
+        ".anki .char",
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out", stagger: 0.05 },
+        2.7,
+      );
+      tl.to(
+        ".pack .char",
+        { opacity: 1, y: 0, rotation: 0, duration: 0.35, ease: "power2.out", stagger: 0.045 },
+        3.15,
+      );
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

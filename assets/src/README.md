@@ -8,12 +8,12 @@ Both fonts load from Google Fonts at render time, so rendering needs network.
 `banner-*` and `social-*` files are the same lockup at the sizes each output
 needs, differing only in `font-size`.
 
-| Source            | Window    | Output                    | Used for                   |
-| ----------------- | --------- | ------------------------- | -------------------------- |
-| `banner-light`    | 1200x320  | `../banner-light.png`     | README, light theme        |
-| `banner-dark`     | 1200x320  | `../banner-dark.png`      | README, dark theme         |
-| `social-light`    | 640x320   | `../social-light.png`     | GitHub social preview      |
-| `social-dark`     | 640x320   | `../social-dark.png`      | GitHub social preview      |
+| Source         | Window   | Output                | Used for              |
+| -------------- | -------- | --------------------- | --------------------- |
+| `banner-light` | 1200x320 | `../banner-light.png` | README, light theme   |
+| `banner-dark`  | 1200x320 | `../banner-dark.png`  | README, dark theme    |
+| `social-light` | 640x320  | `../social-light.png` | GitHub social preview |
+| `social-dark`  | 640x320  | `../social-dark.png`  | GitHub social preview |
 
 Every output is rendered at `--force-device-scale-factor=2`, so a 1200x320
 window gives a 2400x640 file and 640x320 gives the 1280x640 GitHub wants.
@@ -27,3 +27,12 @@ chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
 
 Pass absolute paths. A relative `--screenshot` writes to the working directory,
 not next to the source.
+
+## The logo sting
+
+`sting/` is a [HyperFrames](https://github.com/heygen-com/hyperframes)
+composition that renders `../ankipack-sting.mp4`. It carries its own fonts and a
+baked `box.png` because a render must not fetch anything per frame.
+
+Rebuild with `npx hyperframes render`. To scrub it by hand, open
+`sting/index.html` and call `window.__timelines.main.seek(seconds)`.
