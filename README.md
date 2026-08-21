@@ -14,7 +14,7 @@
 Generate, read and edit Anki `.apkg` decks programmatically, with full FSRS support.
 Works in browsers (including extensions), Node.js, and Bun.
 
-ankipack targets Anki's modern schema (V18, with protobuf-encoded deck configs) and is verified against Anki 26.08.1. As far as I know, it is the only JavaScript or TypeScript package that supports the latest Anki format, including FSRS scheduler settings.
+ankipack targets Anki's modern schema (V18, with protobuf-encoded deck configs) and is verified against Anki 26.08.1. As far as I know, it is the only JavaScript or TypeScript package made for creating decks in that format, FSRS deck options included.
 
 **[Your first deck](https://docolin.com/imgajeed/ankipack/tutorial/first-deck)**
 goes from an empty folder to a deck in Anki in about 15 minutes. Everything else
