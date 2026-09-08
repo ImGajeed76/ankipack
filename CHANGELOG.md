@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fix: a webpack build for the browser failed with `UnhandledSchemeError` on
+  `node:fs/promises`, the dynamic import behind `writeToFile`. The import now
+  carries `webpackIgnore` and `@vite-ignore` markers, so webpack leaves it
+  alone and Vite stops printing its externalisation warning. Selenium39
+  reported it in issue #1, with a workaround that upgrading makes unnecessary.
+
 ## 0.3.0
 
 ankipack can now read an `.apkg`, change it, and write it back. Building and

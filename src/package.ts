@@ -75,7 +75,11 @@ export class Package {
    */
   async writeToFile(path: string, SQL: SqlJsStatic): Promise<void> {
     const data = await this.toUint8Array(SQL);
-    const { writeFile } = await import("node:fs/promises");
+    // Keeps webpack and Vite from resolving a Node-only import in a web build.
+    // A web target otherwise fails the whole build on the node: scheme, see issue #1.
+    const { writeFile } = await import(
+      /* webpackIgnore: true */ /* @vite-ignore */ "node:fs/promises"
+    );
     await writeFile(path, data);
   }
 }

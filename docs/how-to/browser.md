@@ -1,6 +1,6 @@
 ---
 title: Generate a deck in the browser
-description: Building an .apkg client side, from loading the sql.js WASM binary to handing the file to the user, plus the bundler warning ankipack triggers and why it is harmless.
+description: Building an .apkg client side, from loading the sql.js WASM binary to handing the file to the user, plus what ankipack 0.3.0 and earlier do to a webpack or Vite build.
 authors:
   - handle: imgajeed
   - name: Claude
@@ -135,21 +135,33 @@ detail.
 
 ## The bundler warning
 
-A browser build that includes ankipack emits a warning. With Vite it reads:
+`writeToFile` imports `node:fs/promises` dynamically. Bundlers resolve dynamic
+imports statically, so a browser build sees a Node module it can never load.
+From 0.3.1 the import carries `webpackIgnore` and `@vite-ignore` markers and
+both bundlers leave it alone. Nothing below applies once you upgrade.
+
+On 0.3.0 and earlier, webpack with `target: "web"` fails the whole build with
+`UnhandledSchemeError`, and `resolve.alias` cannot match a `node:` request. The
+workaround redirects the request to an empty module:
+
+```js title="webpack.config.js"
+new webpack.NormalModuleReplacementPlugin(
+  /^node:fs\/promises$/,
+  "data:text/javascript,export default {}",
+)
+```
+
+Vite on those versions builds, but warns:
 
 !!! output "Vite 8, production build"
     ```
     [plugin rolldown:vite-resolve] Module "node:fs/promises" has been externalized for browser compatibility, imported by ".../node_modules/ankipack/dist/package.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
     ```
 
-Expected and harmless. `writeToFile` imports `node:fs/promises` dynamically;
-bundlers resolve dynamic imports statically and see it even though the branch
-never runs. The build succeeds and the module is replaced with a stub.
-
-If your build treats warnings as errors, silence this one rather than
-suppressing externalisation warnings as a class. In Vite that is a
+That one is harmless. If your build treats warnings as errors, add a
 `build.rollupOptions.onwarn` handler that returns early when the message names
-`node:fs/promises`. Match on the message: this warning carries no `code`.
+`node:fs/promises`. That silences this warning without suppressing the whole
+class.
 
 ## Browser extensions
 
