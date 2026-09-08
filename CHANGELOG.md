@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - Fix: a webpack build for the browser failed with `UnhandledSchemeError` on
   `node:fs/promises`, the dynamic import behind `writeToFile`. The import now
